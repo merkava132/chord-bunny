@@ -60,6 +60,8 @@ export class StringTracker {
     this.ringing = new Float32Array(6);
     this.ringSince = new Float64Array(6).fill(-1);
     this.onEvent = null;
+    this.lastT = 0;
+    this.lastInferred = null;
     this.setVoicing([0, 0, 0, 0, 0, 0]);
   }
 
@@ -168,6 +170,7 @@ export class StringTracker {
       this.pending = null;
     }
     this.frameIndex++;
+    this.lastT = t;
     return { t, h, noise, level, flux, onset, present: this.present(h) };
   }
 

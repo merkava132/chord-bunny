@@ -6,8 +6,9 @@ import { renderInto } from './diagrams.js';
 import * as settings from './settings.js';
 
 export class PracticeMode {
-  constructor({ root, allChords, getEnabled, getDetector }) {
+  constructor({ root, allChords, getEnabled, getDetector, onCurrent = null }) {
     this.root = root;
+    this.onCurrent = onCurrent;
     this.allChords = allChords;
     this.getEnabled = getEnabled;
     this.getDetector = getDetector;
@@ -132,6 +133,7 @@ export class PracticeMode {
   }
 
   _render(cur, next) {
+    if (this.onCurrent) this.onCurrent(cur);
     this.curName.textContent  = cur  ? cur.name  : '—';
     this.nextName.textContent = next ? next.name : '—';
     this.curMeta.textContent  = cur  ? cur.fullName : '';

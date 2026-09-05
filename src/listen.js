@@ -3,8 +3,10 @@
 import { renderInto } from './diagrams.js';
 
 export class ListenMode {
-  constructor({ root, allChords, getDetector, getAudioContext, getMicSource }) {
+  constructor({ root, allChords, getDetector, getAudioContext, getMicSource, onChord = null }) {
     this.root = root;
+    this.onChord = onChord;
+    this.shownId = null;
     this.allChords = allChords;
     this.getDetector = getDetector;
     this.getAudioContext = getAudioContext;
@@ -54,8 +56,9 @@ export class ListenMode {
         const c = idToChord.get(id);
         this.bigChord.textContent = c ? c.name : '—';
         this.subEl.textContent = c ? c.fullName : '';
-        renderInto(this.diagEl, c);
+        if (id !== this.shownId) { renderInto(this.diagEl, c); this.shownId = id; if (this.onChord && c) this.onChord(c); }
       } else {
+        this.shownId = null;
         this.bigChord.textContent = '—';
         this.subEl.textContent = 'listening…';
         this.diagEl.innerHTML = '';

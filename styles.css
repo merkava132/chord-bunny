@@ -296,3 +296,48 @@ footer {
   .arrow { display: none; }
   .practice-controls .timer-display { margin-left: 0; }
 }
+
+/* ---------- per-string activity ---------- */
+.strings-view { margin-top: 12px; }
+.strings { transition: opacity .6s; }
+.strings.stale .strum-line, .strings.stale .strum-fb { opacity: 0.55; }
+.string-bars {
+  display: flex; justify-content: center; gap: 10px;
+  height: 64px; align-items: flex-end; margin: 4px auto 6px;
+}
+.sbar { display: flex; flex-direction: column; align-items: center; width: 26px; height: 100%; }
+.sbar .track {
+  flex: 1; width: 8px; background: var(--bg-3); border-radius: 4px;
+  display: flex; align-items: flex-end; overflow: hidden;
+}
+.sbar .fill { width: 100%; height: 0%; background: var(--fg-dim); border-radius: 4px; transition: height .06s linear, background .15s; }
+.sbar .name { font-family: var(--mono); font-size: 0.72rem; color: var(--fg-dim); margin-top: 3px; }
+.sbar .sus { font-family: var(--mono); font-size: 0.62rem; color: var(--fg-dim); height: 0.8rem; }
+.sbar[data-state="ring"] .fill { background: var(--accent-2); }
+.sbar[data-state="ring"] .name { color: var(--accent-2); }
+.sbar[data-state="inferred"] .fill { background: repeating-linear-gradient(0deg, var(--accent-2) 0 3px, transparent 3px 6px); opacity: .8; }
+.sbar[data-state="inferred"] .name { color: var(--accent-2); opacity: .8; }
+.sbar[data-state="wrong"] .fill { background: var(--warn); }
+.sbar[data-state="wrong"] .name { color: var(--warn); }
+.sbar.doubled .name::after { content: '°'; opacity: .6; }
+.strum-line { display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--fg-dim); font-family: var(--mono); }
+.strum-line .dir { font-size: 1.25rem; line-height: 1; min-width: 1.2em; text-align: center; }
+.strum-line .dir[data-dir="down"], .strum-line .dir[data-dir="up"] { color: var(--accent); }
+.strum-fb { text-align: center; font-size: 0.82rem; margin-top: 4px; min-height: 1.2em; }
+.strum-fb .good { color: var(--accent-2); }
+.strum-fb .warn { color: var(--accent); }
+.strum-fb .bad { color: var(--warn); }
+.strum-fb .dim { color: var(--fg-dim); }
+
+/* diagram strings light up with the tracker */
+.chord-diagram .string { transition: stroke .1s, stroke-width .1s; }
+.chord-diagram .string[data-state="ring"] { stroke: var(--accent-2); stroke-width: 2.5; }
+.chord-diagram .string[data-state="inferred"] { stroke: var(--accent-2); stroke-width: 2; stroke-dasharray: 3 3; }
+.chord-diagram .string[data-state="wrong"] { stroke: var(--warn); stroke-width: 2.5; }
+.chord-diagram .dot[data-state="ring"], .chord-diagram .open[data-state="ring"] { fill: var(--accent-2); }
+.chord-diagram .open[data-state="ring"] { stroke: var(--accent-2); }
+.chord-diagram .mute[data-state="wrong"] { stroke: var(--warn); stroke-width: 2.5; }
+
+.about { color: var(--fg-dim); font-size: 0.86rem; line-height: 1.5; max-width: 640px; }
+.about p { margin: 8px 0; }
+.about b { color: var(--fg); }

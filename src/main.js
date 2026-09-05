@@ -5,15 +5,23 @@ import * as settings from './settings.js';
 import { ChordDetector } from './detect.js';
 import { PracticeMode } from './practice.js';
 import { ListenMode } from './listen.js';
+import { StringTracker } from './dsp/strings.js';
+import { StringsView } from './strings-ui.js';
 
-const ALL_CHORDS = await fetch('data/chords.json').then(r => r.json());
+const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING] = await Promise.all([
+  fetch('data/chords.json').then(r => r.json()),
+  fetch('data/partials.json').then(r => r.json()).catch(() => null),
+  fetch('data/partials_by_string.json').then(r => r.json()).catch(() => null),
+]);
 
 let audioCtx = null;
 let micStream = null;
 let micSource = null;
 let detector = null;
+let stringTracker = null;
 let practice = null;
 let listen = null;
+let curView = null, listenView = null;   // StringsView per mode
 
 const micStatusEl = document.getElementById('mic-status');
 const micLabelEl  = micStatusEl.querySelector('.label');
@@ -68,13 +76,17 @@ document.querySelectorAll('.picker-actions button').forEach(btn => {
 });
 
 // ---------- detection settings sliders ----------
+// Calibrated on GuitarSet (tools/calibrate.mjs): confidence ≥0.35 → 77% of
+// chord frames get a verdict, 91% of those verdicts are right. Slider 0–100
+// maps to 0.10–0.55.
+const sensFromSlider = (v) => 0.10 + (v / 100) * 0.45;
 const sensSlider = document.getElementById('sensitivity');
 const minHoldInput = document.getElementById('min-hold');
 sensSlider.value = settings.get('sensitivity');
 minHoldInput.value = settings.get('minHoldMs');
 sensSlider.addEventListener('input', () => {
   settings.set('sensitivity', Number(sensSlider.value));
-  if (detector) detector.setSensitivity(0.20 + (Number(sensSlider.value) / 100) * 0.55);
+  if (detector) detector.setSensitivity(sensFromSlider(Number(sensSlider.value)));
 });
 minHoldInput.addEventListener('change', () => {
   settings.set('minHoldMs', Number(minHoldInput.value));
@@ -99,6 +111,7 @@ function setMode(mode) {
   });
   if (mode === 'practice') { listen?.disable(); practice?.enable(); _attachMicToDetector(); }
   else                     { practice?.disable(); listen?.enable(); }
+  _activateStringView(mode);
 }
 document.querySelectorAll('.mode-btn').forEach(b => {
   b.addEventListener('click', () => setMode(b.dataset.mode));
@@ -130,7 +143,7 @@ async function enableMic() {
       }
     });
     micSource = audioCtx.createMediaStreamSource(micStream);
-    if (!detector) detector = makeDetector();
+    if (!detector) detector = await makeDetector();
     _attachMicToDetector();
     detector.start({});
     setMicStatus('on', 'mic on');
@@ -145,11 +158,37 @@ async function enableMic() {
   }
 }
 
-function makeDetector() {
-  const d = new ChordDetector({ audioContext: audioCtx, chords: ALL_CHORDS });
-  d.setSensitivity(0.20 + (settings.get('sensitivity') / 100) * 0.55);
+async function makeDetector() {
+  const d = new ChordDetector({ audioContext: audioCtx, chords: ALL_CHORDS, profiles: PROFILES });
+  d.setSensitivity(sensFromSlider(settings.get('sensitivity')));
   d.setMinHold(settings.get('minHoldMs'));
+  stringTracker = new StringTracker({ sampleRate: audioCtx.sampleRate, profiles: PROFILES, profilesByString: PROFILES_BY_STRING });
+  d.addConsumer({ size: stringTracker.o.fftSize, hop: stringTracker.o.hop, fn: (frame, t) => stringTracker.process(frame, t) });
+  await d.init();
+  _wireStringViews();
   return d;
+}
+
+// The string tracker follows the target chord (practice) or the detected
+// chord (listen). One tracker, one view active at a time.
+let pendingVoicing = null;
+function setVoicing(chord) {
+  if (!chord) return;
+  pendingVoicing = chord.fingering.frets;
+  if (stringTracker) stringTracker.setVoicing(pendingVoicing);
+}
+function _wireStringViews() {
+  if (!stringTracker) return;
+  if (pendingVoicing) stringTracker.setVoicing(pendingVoicing);
+  _activateStringView(settings.get('mode'));
+}
+function _activateStringView(mode) {
+  if (!stringTracker) return;
+  const active = mode === 'practice' ? curView : listenView;
+  const other = mode === 'practice' ? listenView : curView;
+  other?.stop();
+  active?.setTracker(stringTracker);
+  active?.start();
 }
 
 function _attachMicToDetector() {
@@ -177,11 +216,17 @@ document.addEventListener('keydown', firstGestureMicAuto);
 
 // ---------- bootstrap ----------
 renderChordPicker();
+curView = new StringsView(document.getElementById('cur-strings'));
+curView.setDiagram(document.getElementById('cur-diagram'));
+listenView = new StringsView(document.getElementById('listen-strings'));
+listenView.setDiagram(document.getElementById('listen-diagram'));
+
 practice = new PracticeMode({
   root: document.getElementById('practice'),
   allChords: ALL_CHORDS,
   getEnabled: () => settings.get('enabledChords'),
   getDetector: () => detector,
+  onCurrent: (chord) => setVoicing(chord),
 });
 listen = new ListenMode({
   root: document.getElementById('listen'),
@@ -189,6 +234,7 @@ listen = new ListenMode({
   getDetector: () => detector,
   getAudioContext: ensureAudioCtx,
   getMicSource: () => micSource,
+  onChord: (chord) => setVoicing(chord),
 });
 
 setMode(settings.get('mode'));
@@ -196,3 +242,16 @@ setMode(settings.get('mode'));
 // hint update
 const hintEl = document.getElementById('detection-hint');
 if (!micStream) hintEl.textContent = 'click the mic chip (top right) or anywhere to enable mic';
+
+// ---------- dev/test hooks (URL params) ----------
+//   ?autostart=1        enable mic without a gesture (headless testing with a fake mic)
+//   ?mode=listen        force a mode
+//   ?chord=G            force the practice target chord
+const params = new URLSearchParams(location.search);
+if (params.get('mode')) setMode(params.get('mode'));
+if (params.get('chord')) {
+  const c = ALL_CHORDS.find(x => x.id === params.get('chord'));
+  if (c && practice) { practice.current = c; practice.next = ALL_CHORDS.find(x => x.id !== c.id); practice._render(practice.current, practice.next); }
+}
+if (params.get('autostart')) enableMic().then(() => { window.__micStartedAt = performance.now(); });
+window.__cb = { get detector() { return detector; }, get tracker() { return stringTracker; }, settings };

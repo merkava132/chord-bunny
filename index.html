@@ -27,6 +27,7 @@
         <div class="chord-label" id="cur-name">—</div>
         <div class="chord-diagram" id="cur-diagram"></div>
         <div class="chord-meta" id="cur-meta"></div>
+        <div class="strings-view" id="cur-strings"></div>
       </div>
       <div class="arrow" aria-hidden="true">→</div>
       <div class="chord-card next">
@@ -66,6 +67,7 @@
       <div class="big-chord" id="listen-chord">—</div>
       <div class="listen-sub" id="listen-sub">play something</div>
       <div class="chord-diagram" id="listen-diagram"></div>
+      <div class="strings-view" id="listen-strings"></div>
     </div>
     <div class="listen-controls">
       <label class="filebtn">
@@ -106,6 +108,24 @@
         <span>min hold (ms)</span>
         <input type="number" id="min-hold" min="100" max="2000" step="50" value="350">
       </label>
+    </details>
+    <details>
+      <summary>how it listens</summary>
+      <div class="about">
+        <p>Each 186 ms window of audio is decomposed onto harmonic templates for every
+        pitch on the neck (learned from real guitar recordings), folded to pitch classes, and
+        scored against the chord list. On the GuitarSet room-mic benchmark this gets 82% of
+        frames right where the old chroma detector got 71%.</p>
+        <p>For the strings, a second analysis runs every 6 ms with one template per string of
+        the shape you're holding. A strum is detected from the spectral flux; each string's
+        onset is timed from the steepest rise of its activation, which gives the direction
+        (low strings first = downstrum) when the strings are far enough apart in time.</p>
+        <p><b>What it can't do:</b> two strings an octave apart (the two Gs in a G chord, the
+        C3/C4 pair in C) are spectrally nested, and pluck-to-pluck variation swamps the
+        difference, so those strings are shown hollow — <i>inferred</i> from the strum, not
+        measured. Direction is only shown when the timing is clear; a single mic can't do
+        better than about ±8 ms per string.</p>
+      </div>
     </details>
   </section>
 </main>

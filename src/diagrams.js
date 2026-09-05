@@ -33,7 +33,7 @@ export function renderChord(chord) {
     svg.appendChild(el('line', {
       x1: x, y1: GRID_Y,
       x2: x, y2: GRID_Y + FRETS * FRET_GAP,
-      class: 'grid',
+      class: 'grid string', 'data-string': s,
     }));
   }
   // frets (horizontal lines)
@@ -63,21 +63,21 @@ export function renderChord(chord) {
     if (fret === -1) {
       const cx = x, cy = GRID_Y - 12;
       svg.appendChild(el('line', {
-        x1: cx - 4, y1: cy - 4, x2: cx + 4, y2: cy + 4, class: 'mute',
+        x1: cx - 4, y1: cy - 4, x2: cx + 4, y2: cy + 4, class: 'mute', 'data-string': s,
       }));
       svg.appendChild(el('line', {
-        x1: cx - 4, y1: cy + 4, x2: cx + 4, y2: cy - 4, class: 'mute',
+        x1: cx - 4, y1: cy + 4, x2: cx + 4, y2: cy - 4, class: 'mute', 'data-string': s,
       }));
     } else if (fret === 0) {
       svg.appendChild(el('circle', {
-        cx: x, cy: GRID_Y - 12, r: 4, class: 'open',
+        cx: x, cy: GRID_Y - 12, r: 4, class: 'open', 'data-string': s,
       }));
     } else {
       const relFret = fret - baseFret + 1;
       if (relFret >= 1 && relFret <= FRETS) {
         const cy = GRID_Y + (relFret - 0.5) * FRET_GAP;
         svg.appendChild(el('circle', {
-          cx: x, cy, r: 7, class: 'dot',
+          cx: x, cy, r: 7, class: 'dot', 'data-string': s,
         }));
         if (finger > 0) {
           svg.appendChild(el('text', {
