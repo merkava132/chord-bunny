@@ -14,3 +14,5 @@ fought back. Newest at the bottom.
   for onset timing / strum direction. Needs raw sample access (AudioWorklet).
 - Nodriver browser MCP failed to connect (502) — use WebFetch/curl for
   data hunting.
+- zsh `noclobber` is set: `cat > existing-file` silently fails with
+  "file exists" and the *old* file keeps running. Use `>|` when overwriting.
