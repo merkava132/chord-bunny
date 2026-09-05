@@ -37,6 +37,9 @@ export const DEFAULTS = {
   compress: 1.0,      // magnitude^compress before NNLS
   iters: 30,          // coordinate-descent sweeps
   profiles: null,     // { midi: [a1, a2, ...] } learned partial amplitudes; null → 1/k^alpha
+  profileFor: null,   // optional (midi, i) → profile array; overrides `profiles` when it returns one
+  pitchList: null,    // explicit MIDI list instead of minMidi..maxMidi (may repeat)
+  noiseBasis: false,  // append a flat broadband template (absorbs attack noise / room)
   profileSmooth: 2,   // ± semitones to average learned profiles over (log domain)
   // chroma folding: full weight up to `chromaKnee` (MIDI), then linear
   // rolloff to `chromaFloor` at maxMidi — high activations are mostly
@@ -62,19 +65,21 @@ export class PitchAnalyzer {
     this.nBins = this.kMax - this.kMin + 1;
     this.mag = new Float32Array(this.nBins);      // compressed magnitude, bins kMin..kMax
 
-    this.pitches = [];
-    for (let m = o.minMidi; m <= o.maxMidi; m++) this.pitches.push(m);
-    this.nP = this.pitches.length;
+    this.pitches = o.pitchList ? [...o.pitchList] : [];
+    if (!o.pitchList) for (let m = o.minMidi; m <= o.maxMidi; m++) this.pitches.push(m);
+    this.nP = this.pitches.length + (o.noiseBasis ? 1 : 0);
+    this.noiseIndex = o.noiseBasis ? this.nP - 1 : -1;
     this._buildDictionary();
     this.act = new Float32Array(this.nP);
     this.b = new Float32Array(this.nP);
   }
 
-  pitchIndex(midi) { return midi - this.opts.minMidi; }
+  pitchIndex(midi) { return this.opts.pitchList ? this.pitches.indexOf(midi) : midi - this.opts.minMidi; }
 
   // Learned partial profile for a pitch: geometric mean over neighbouring
   // pitches (±profileSmooth semitones) that have data, weighted by 1/(1+d).
   _profile(midi) {
+    if (this.opts.profileFor) { const p = this.opts.profileFor(midi, this._buildingIndex); if (p) return p; }
     const P = this.opts.profiles;
     if (!P) return null;
     const K = this.opts.partials;
@@ -101,7 +106,9 @@ export class PitchAnalyzer {
     const { fftSize: N, sampleRate: sr, partials, alpha, inharm } = this.opts;
     this.tplBins = [];
     this.tplW = [];
-    for (const m of this.pitches) {
+    for (let pi = 0; pi < this.pitches.length; pi++) {
+      const m = this.pitches[pi];
+      this._buildingIndex = pi;
       const f0 = midiToHz(m);
       const acc = new Map();
       const prof = this._profile(m);
@@ -126,6 +133,11 @@ export class PitchAnalyzer {
       this.tplBins.push(bins);
       this.tplW.push(ws);
     }
+    if (this.opts.noiseBasis) {
+      const bins = new Int32Array(this.nBins), ws = new Float32Array(this.nBins).fill(1 / Math.sqrt(this.nBins));
+      for (let k = 0; k < this.nBins; k++) bins[k] = this.kMin + k;
+      this.tplBins.push(bins); this.tplW.push(ws);
+    }
     // Gram matrix G = WᵀW (dense, nP×nP), computed via sparse overlap
     const nP = this.nP;
     this.G = new Float32Array(nP * nP);
@@ -142,6 +154,9 @@ export class PitchAnalyzer {
       }
     }
   }
+
+  // Rebuild the dictionary (e.g. after changing profileFor).
+  rebuild() { this._buildDictionary(); }
 
   // Compute the compressed magnitude spectrum of a frame (length fftSize).
   spectrum(frame) {
@@ -254,7 +269,7 @@ export class PitchAnalyzer {
     }
     out.fill(0);
     let s = 0;
-    for (let i = 0; i < this.nP; i++) { const v = act[i] * this.chromaW[i]; out[this.pitches[i] % 12] += v; s += v; }
+    for (let i = 0; i < this.pitches.length; i++) { const v = act[i] * this.chromaW[i]; out[this.pitches[i] % 12] += v; s += v; }
     if (s > 0) for (let i = 0; i < 12; i++) out[i] /= s;
     return out;
   }

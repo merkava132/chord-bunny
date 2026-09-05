@@ -10,6 +10,7 @@ import { listExcerpts, loadExcerpt, stringsAt } from './guitarset.mjs';
 const N = 8192, HOP = 2048, K = 12;
 const fft = new FFT(N), win = hann(N), re = new Float32Array(N), im = new Float32Array(N);
 const acc = new Map();   // midi → { n, sum: Float64Array(K) } of log amplitudes
+const accS = new Map();  // `${string}:${midi}` → same, keyed per string
 let frameCount = 0;
 for (const name of listExcerpts()) {
   const ex = loadExcerpt(name);
@@ -37,16 +38,25 @@ for (const name of listExcerpts()) {
     }
     if (!ok || amps[0] <= 0) continue;
     const midi = Math.round(midiF);
-    const e = acc.get(midi) || { n: 0, sum: new Float64Array(K) };
-    for (let k = 0; k < K; k++) e.sum[k] += Math.log((amps[k] || 1e-9) / amps[0]);
+    const e = acc.get(midi) || { n: 0, sum: new Float64Array(K), sq: new Float64Array(K), byString: new Map() };
+    for (let k = 0; k < K; k++) { const l = Math.log((amps[k] || 1e-9) / amps[0]); e.sum[k] += l; e.sq[k] += l * l; }
+    { const bs = e.byString.get(s) || { n: 0, s2: 0 }; bs.n++; bs.s2 += Math.log((amps[1] || 1e-9) / amps[0]); e.byString.set(s, bs); }
     e.n++; acc.set(midi, e); frameCount++;
+    { const key = `${s}:${midi}`; const es = accS.get(key) || { n: 0, sum: new Float64Array(K) };
+      for (let k = 0; k < K; k++) es.sum[k] += Math.log((amps[k] || 1e-9) / amps[0]); es.n++; accS.set(key, es); }
   }
 }
 const out = {};
 for (const [midi, e] of [...acc.entries()].sort((a, b) => a[0] - b[0])) {
   const prof = Array.from(e.sum, v => Math.exp(v / e.n));
   out[midi] = prof.map(v => Number(v.toFixed(4)));
-  console.log(`${midiName(midi).padEnd(4)} n=${String(e.n).padStart(4)}  ` + prof.slice(0, 8).map(v => v.toFixed(2)).join(' '));
+  const sd = Array.from(e.sq, (q, k) => Math.sqrt(Math.max(0, q / e.n - (e.sum[k] / e.n) ** 2)));
+  const per = [...e.byString.entries()].sort((a, b) => a[0] - b[0]).map(([st, v]) => `s${st}:${Math.exp(v.s2 / v.n).toFixed(2)}(${v.n})`).join(' ');
+  console.log(`${midiName(midi).padEnd(4)} n=${String(e.n).padStart(4)}  ` + prof.slice(0, 6).map(v => v.toFixed(2)).join(' ') + `  | sd(log a2/a1)=${sd[1].toFixed(2)} sd(a3)=${sd[2].toFixed(2)}  a2 by string: ${per}`);
 }
 fs.writeFileSync(new URL('../data/partials.json', import.meta.url), JSON.stringify(out));
+const outS = {};
+for (const [key, e] of accS) if (e.n >= 3) outS[key] = Array.from(e.sum, v => Number(Math.exp(v / e.n).toFixed(4)));
+fs.writeFileSync(new URL('../data/partials_by_string.json', import.meta.url), JSON.stringify(outS));
+console.log(`${Object.keys(outS).length} (string,pitch) profiles with ≥3 frames → data/partials_by_string.json`);
 console.log(`${frameCount} single-string frames, ${Object.keys(out).length} pitches → data/partials.json`);
