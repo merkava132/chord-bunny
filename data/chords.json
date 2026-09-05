@@ -1,0 +1,296 @@
+[
+  {
+    "id": "C",
+    "name": "C",
+    "fullName": "C major",
+    "category": "basic",
+    "root": "C",
+    "quality": "major",
+    "notes": ["C", "E", "G"],
+    "fingering": {
+      "frets": [-1, 3, 2, 0, 1, 0],
+      "fingers": [0, 3, 2, 0, 1, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "D",
+    "name": "D",
+    "fullName": "D major",
+    "category": "basic",
+    "root": "D",
+    "quality": "major",
+    "notes": ["D", "F#", "A"],
+    "fingering": {
+      "frets": [-1, -1, 0, 2, 3, 2],
+      "fingers": [0, 0, 0, 1, 3, 2],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "E",
+    "name": "E",
+    "fullName": "E major",
+    "category": "basic",
+    "root": "E",
+    "quality": "major",
+    "notes": ["E", "G#", "B"],
+    "fingering": {
+      "frets": [0, 2, 2, 1, 0, 0],
+      "fingers": [0, 2, 3, 1, 0, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "F",
+    "name": "F",
+    "fullName": "F major",
+    "category": "basic",
+    "root": "F",
+    "quality": "major",
+    "notes": ["F", "A", "C"],
+    "fingering": {
+      "frets": [-1, -1, 3, 2, 1, 1],
+      "fingers": [0, 0, 3, 2, 1, 1],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "G",
+    "name": "G",
+    "fullName": "G major",
+    "category": "basic",
+    "root": "G",
+    "quality": "major",
+    "notes": ["G", "B", "D"],
+    "fingering": {
+      "frets": [3, 2, 0, 0, 0, 3],
+      "fingers": [2, 1, 0, 0, 0, 3],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "A",
+    "name": "A",
+    "fullName": "A major",
+    "category": "basic",
+    "root": "A",
+    "quality": "major",
+    "notes": ["A", "C#", "E"],
+    "fingering": {
+      "frets": [-1, 0, 2, 2, 2, 0],
+      "fingers": [0, 0, 1, 2, 3, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Dm",
+    "name": "Dm",
+    "fullName": "D minor",
+    "category": "basic",
+    "root": "D",
+    "quality": "minor",
+    "notes": ["D", "F", "A"],
+    "fingering": {
+      "frets": [-1, -1, 0, 2, 3, 1],
+      "fingers": [0, 0, 0, 2, 3, 1],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Em",
+    "name": "Em",
+    "fullName": "E minor",
+    "category": "basic",
+    "root": "E",
+    "quality": "minor",
+    "notes": ["E", "G", "B"],
+    "fingering": {
+      "frets": [0, 2, 2, 0, 0, 0],
+      "fingers": [0, 2, 3, 0, 0, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Am",
+    "name": "Am",
+    "fullName": "A minor",
+    "category": "basic",
+    "root": "A",
+    "quality": "minor",
+    "notes": ["A", "C", "E"],
+    "fingering": {
+      "frets": [-1, 0, 2, 2, 1, 0],
+      "fingers": [0, 0, 2, 3, 1, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "C7",
+    "name": "C7",
+    "fullName": "C dominant 7",
+    "category": "seventh",
+    "root": "C",
+    "quality": "dom7",
+    "notes": ["C", "E", "G", "A#"],
+    "fingering": {
+      "frets": [-1, 3, 2, 3, 1, 0],
+      "fingers": [0, 3, 2, 4, 1, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "D7",
+    "name": "D7",
+    "fullName": "D dominant 7",
+    "category": "seventh",
+    "root": "D",
+    "quality": "dom7",
+    "notes": ["D", "F#", "A", "C"],
+    "fingering": {
+      "frets": [-1, -1, 0, 2, 1, 2],
+      "fingers": [0, 0, 0, 2, 1, 3],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "E7",
+    "name": "E7",
+    "fullName": "E dominant 7",
+    "category": "seventh",
+    "root": "E",
+    "quality": "dom7",
+    "notes": ["E", "G#", "B", "D"],
+    "fingering": {
+      "frets": [0, 2, 0, 1, 0, 0],
+      "fingers": [0, 2, 0, 1, 0, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "G7",
+    "name": "G7",
+    "fullName": "G dominant 7",
+    "category": "seventh",
+    "root": "G",
+    "quality": "dom7",
+    "notes": ["G", "B", "D", "F"],
+    "fingering": {
+      "frets": [3, 2, 0, 0, 0, 1],
+      "fingers": [3, 2, 0, 0, 0, 1],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "A7",
+    "name": "A7",
+    "fullName": "A dominant 7",
+    "category": "seventh",
+    "root": "A",
+    "quality": "dom7",
+    "notes": ["A", "C#", "E", "G"],
+    "fingering": {
+      "frets": [-1, 0, 2, 0, 2, 0],
+      "fingers": [0, 0, 2, 0, 3, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "B7",
+    "name": "B7",
+    "fullName": "B dominant 7",
+    "category": "seventh",
+    "root": "B",
+    "quality": "dom7",
+    "notes": ["B", "D#", "F#", "A"],
+    "fingering": {
+      "frets": [-1, 2, 1, 2, 0, 2],
+      "fingers": [0, 2, 1, 3, 0, 4],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Am7",
+    "name": "Am7",
+    "fullName": "A minor 7",
+    "category": "minor7",
+    "root": "A",
+    "quality": "min7",
+    "notes": ["A", "C", "E", "G"],
+    "fingering": {
+      "frets": [-1, 0, 2, 0, 1, 0],
+      "fingers": [0, 0, 2, 0, 1, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Dm7",
+    "name": "Dm7",
+    "fullName": "D minor 7",
+    "category": "minor7",
+    "root": "D",
+    "quality": "min7",
+    "notes": ["D", "F", "A", "C"],
+    "fingering": {
+      "frets": [-1, -1, 0, 2, 1, 1],
+      "fingers": [0, 0, 0, 2, 1, 1],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Em7",
+    "name": "Em7",
+    "fullName": "E minor 7",
+    "category": "minor7",
+    "root": "E",
+    "quality": "min7",
+    "notes": ["E", "G", "B", "D"],
+    "fingering": {
+      "frets": [0, 2, 0, 0, 0, 0],
+      "fingers": [0, 2, 0, 0, 0, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Asus2",
+    "name": "Asus2",
+    "fullName": "A suspended 2",
+    "category": "sus",
+    "root": "A",
+    "quality": "sus2",
+    "notes": ["A", "B", "E"],
+    "fingering": {
+      "frets": [-1, 0, 2, 2, 0, 0],
+      "fingers": [0, 0, 1, 2, 0, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Dsus2",
+    "name": "Dsus2",
+    "fullName": "D suspended 2",
+    "category": "sus",
+    "root": "D",
+    "quality": "sus2",
+    "notes": ["D", "E", "A"],
+    "fingering": {
+      "frets": [-1, -1, 0, 2, 3, 0],
+      "fingers": [0, 0, 0, 1, 3, 0],
+      "baseFret": 1
+    }
+  },
+  {
+    "id": "Esus4",
+    "name": "Esus4",
+    "fullName": "E suspended 4",
+    "category": "sus",
+    "root": "E",
+    "quality": "sus4",
+    "notes": ["E", "A", "B"],
+    "fingering": {
+      "frets": [0, 2, 2, 2, 0, 0],
+      "fingers": [0, 1, 2, 3, 0, 0],
+      "baseFret": 1
+    }
+  }
+]

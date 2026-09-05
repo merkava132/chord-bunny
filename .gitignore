@@ -1,0 +1,7 @@
+node_modules/
+testdata/audio/
+*.wav
+*.mp3
+*.flac
+*.ogg
+.DS_Store

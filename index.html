@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chord-bunny</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>chord-bunny</h1>
+  <nav class="modes" role="tablist">
+    <button class="mode-btn active" data-mode="practice" role="tab">practice</button>
+    <button class="mode-btn"        data-mode="listen"   role="tab">listen</button>
+  </nav>
+  <div class="mic-status" id="mic-status" title="microphone">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="label">mic off</span>
+  </div>
+</header>
+
+<main>
+  <!-- PRACTICE MODE -->
+  <section id="practice" class="mode-pane active">
+    <div class="chord-pair">
+      <div class="chord-card current">
+        <div class="chord-label" id="cur-name">—</div>
+        <div class="chord-diagram" id="cur-diagram"></div>
+        <div class="chord-meta" id="cur-meta"></div>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="chord-card next">
+        <div class="chord-label" id="next-name">—</div>
+        <div class="chord-diagram" id="next-diagram"></div>
+        <div class="chord-meta" id="next-meta"></div>
+      </div>
+    </div>
+
+    <div class="detection-bar" id="detection-bar">
+      <div class="heard">heard: <span id="heard-chord">—</span></div>
+      <div class="meter"><div class="fill" id="conf-fill"></div></div>
+      <div class="hint" id="detection-hint">click anywhere to enable mic</div>
+    </div>
+
+    <div class="practice-controls">
+      <button id="reroll-btn" title="get a new chord pair">↻ new pair</button>
+      <label class="toggle">
+        <input type="checkbox" id="autoadvance-cb" checked>
+        auto-advance on detection
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="timer-cb">
+        also advance on timer
+      </label>
+      <label class="num">
+        <span>seconds</span>
+        <input type="number" id="timer-secs" min="5" max="300" value="60">
+      </label>
+      <div class="timer-display" id="timer-display" hidden>00:00</div>
+    </div>
+  </section>
+
+  <!-- LISTEN MODE -->
+  <section id="listen" class="mode-pane">
+    <div class="listen-stage">
+      <div class="big-chord" id="listen-chord">—</div>
+      <div class="listen-sub" id="listen-sub">play something</div>
+      <div class="chord-diagram" id="listen-diagram"></div>
+    </div>
+    <div class="listen-controls">
+      <label class="filebtn">
+        <input type="file" id="audio-file" accept="audio/*" hidden>
+        <span>load audio file…</span>
+      </label>
+      <span class="filename" id="file-name"></span>
+      <div class="audio-player" id="audio-player" hidden>
+        <button id="play-btn">▶</button>
+        <input type="range" id="play-seek" min="0" max="1000" value="0">
+        <span class="time" id="play-time">0:00</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="settings" id="settings">
+    <details>
+      <summary>chord set</summary>
+      <div class="chord-picker" id="chord-picker"></div>
+      <div class="picker-actions">
+        <button data-pick="basic">basic only</button>
+        <button data-pick="all">all</button>
+        <button data-pick="none">clear</button>
+      </div>
+    </details>
+    <details>
+      <summary>detection</summary>
+      <label class="toggle">
+        <input type="checkbox" id="show-diagrams-cb" checked>
+        show chord diagrams
+      </label>
+      <label class="num">
+        <span>detection sensitivity</span>
+        <input type="range" id="sensitivity" min="0" max="100" value="55">
+      </label>
+      <label class="num">
+        <span>min hold (ms)</span>
+        <input type="number" id="min-hold" min="100" max="2000" step="50" value="350">
+      </label>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <span>just sit down and play.</span>
+</footer>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
