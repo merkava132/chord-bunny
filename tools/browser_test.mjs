@@ -23,7 +23,7 @@ const url = `http://localhost:8732/?autostart=1&mode=${MODE}${args.chord ? `&cho
 const chrome = spawn('google-chrome', [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars',
   `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
-  `--remote-debugging-port=${PORT}`, '--window-size=1100,900', '--force-device-scale-factor=1',
+  `--remote-debugging-port=${PORT}`, `--window-size=${args.width || 1100},${args.height || 900}`, '--force-device-scale-factor=1',
   '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
   `--use-file-for-fake-audio-capture=${wav}%noloop`,
   '--autoplay-policy=no-user-gesture-required',
@@ -75,13 +75,14 @@ const readState = `(() => {
   const tr = window.__cb.tracker;
   return { t: (performance.now() - window.__micStartedAt) / 1000, heard, bars, strum, fb, h: tr ? Array.from(tr.h.subarray(0, 6)).map(v => +v.toFixed(1)) : null, frets: tr ? tr.frets : null };
 })()`;
-const end = Date.now() + ex.duration * 1000 + 500;
+const end = Date.now() + (args.stopAfterShots ? 1e9 : ex.duration * 1000 + 500);
 let shotN = 0;
-const shotTimes = [4, 10, 18];
+const shotTimes = (args.shotAt ? String(args.shotAt).split(',').map(Number) : [4, 10, 18]);
 while (Date.now() < end) {
   const st = await cdp.eval(readState);
   samples.push(st);
-  if (shotN < shotTimes.length && st.t >= shotTimes[shotN]) { await cdp.shot(path.join(SHOTS, `${name}-${MODE}-${shotTimes[shotN]}s.png`)); shotN++; }
+  if (shotN < shotTimes.length && st.t >= shotTimes[shotN]) { await cdp.shot(path.join(SHOTS, `${name}-${MODE}-${args.width || 1100}w-${shotTimes[shotN]}s.png`)); shotN++; }
+  if (args.stopAfterShots && shotN >= shotTimes.length) break;
   await sleep(250);
 }
 const errs = cdp.events.filter(e => e.method === 'Runtime.exceptionThrown').map(e => e.params.exceptionDetails?.exception?.description || e.params.exceptionDetails?.text);
