@@ -220,6 +220,7 @@ function _wireTelemetry(d) {
     n++;
     const playing = f.scores !== null;
     if (playing && f.confidence >= CONFIG.recorder.musicConf && recorder) recorder.noteMusic(f.t);
+    practice?.observeFrame(f);
     if (playing ? n % CONFIG.telemetry.frameEvery !== 0 : n % CONFIG.telemetry.silentEvery !== 0) return;
     const ev = { ts: +f.t.toFixed(3), level: +f.level.toFixed(4), peak: +f.peak.toFixed(3), clip: +f.clip.toFixed(3) };
     if (playing) {
@@ -232,6 +233,7 @@ function _wireTelemetry(d) {
   };
   if (stringTracker) stringTracker.onAnyEvent = (ev) => {
     if (ev.type !== 'strum') return;
+    practice?.observeStrum(ev);
     telemetry.log('strum', { ts: +ev.t.toFixed(3), strings: ev.strings, direction: ev.direction, spreadMs: +ev.spreadMs.toFixed(1), timed: ev.timed, frets: Array.from(stringTracker.frets || []) });
   };
   const recMax = Number(new URLSearchParams(location.search).get('recmax')) || 60;   // ?recmax=5 for tests

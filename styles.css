@@ -164,6 +164,17 @@ main {
 .meter .fill[data-state="match"] { background: var(--accent-2); }
 .meter .fill[data-state="none"] { background: var(--fg-dim); }
 .hint { color: var(--fg-dim); font-size: 0.85rem; }
+.coach {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--fg);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.coach::before { content: 'coach · '; color: var(--accent); font-family: var(--mono); font-size: 0.8rem; }
 
 /* ---------- controls ---------- */
 .practice-controls,

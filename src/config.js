@@ -73,6 +73,32 @@ export const CONFIG = {
     frameEvery: 10,       // frame samples: every Nth frame while playing (~5/s) …
     silentEvery: 50,      // … and every Nth in silence (~1/s)
   },
+  coach: {
+    // Practice hints (src/coach.js). Evaluated only while the target is unmatched.
+    afterSec: 3,          // no hints in the first seconds of a new target (chord change)
+    windowSec: 3,         // recent frames / strums considered
+    holdSec: 4,           // a shown hint stays at least this long
+    repeatSec: 10,        // the same kind is not shown again within this …
+    repeatSecByKind: { quiet: 60, clipping: 30 },   // … unless listed here (setup problems don't need repeating)
+    minSpanSec: 1.2,      // the playing frames in the window must span at least this long
+    strayMin: 0.08,       // mean chroma of a non-chord pitch class that counts as a stray open string
+    chordPresent: 0.4,    // the target's own pitch classes must carry this much of the chroma (else you're playing something else)
+    otherChord: 0.6,      // …and if another chord is the verdict this often, stay quiet (the heard label says it)
+    mutedHitFrac: 0.5,    // strums hitting a muted string, to call it out
+    missingFrac: 0.5,     // strums not reaching a unique-note string …
+    missingChroma: 0.06,  // … while that note is this weak in the chroma
+    clipFrac: 0.2,        // frames with clipping, to warn
+    strumPeakMin: 2,      // a strum counts only if some string's activation peak reaches this (typing clicks ≈0.9, strums ≈5)
+    quietStrums: 4,       // strums seen while (almost) nothing passes the level gate → "very quiet"
+    quietSpanSec: 0.3,    // …i.e. the frames above the gate span less than this
+  },
+  input: {
+    meterDecay: 0.85,     // header level meter fall per update
+    loopbackPattern: 'monitor|loopback|hdmi|stereo mix|what u hear',   // device labels that are not a microphone
+  },
+  debug: {
+    hz: 8,                // debug panel refresh rate
+  },
   strings: {
     // per-string tracker defaults live in src/dsp/strings.js (STRING_DEFAULTS);
     // they were tuned on GuitarSet note annotations and are not app-level knobs
