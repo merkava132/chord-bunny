@@ -87,6 +87,8 @@ Settings → **detection**:
 
 ## Development
 
+`npm test` — unit tests (`tests/`, no audio, < 1 s). `npm run bench` — every benchmark number into `docs/BENCH.md`. `docs/ARCHITECTURE.md` — pipeline, clocks, telemetry schema, how to add a chord / preset / knob / event.
+
 ```
 tools/eval_chords.mjs      chord accuracy vs GuitarSet (old detector side by side, the app scorer, variants; --chords= restricts candidates, --dump=app for confusions, --gt=performed)
 tools/eval_strings.mjs     per-string presence / onsets / strum sets / direction / sustain vs hex-pickup GT
@@ -103,20 +105,28 @@ testdata/fetch_guitarset.py  pulls the subset out of the Zenodo zip by HTTP rang
 
 ```
 index.html / styles.css        UI shell, dark theme
-start.sh                       python -m http.server, opens browser
+serve.py / start.sh            static server + local telemetry / recording sink (start.sh opens the browser)
+package.json                   npm test / npm run bench / eval wrappers (no dependencies)
 data/chords.json               53 chords with fingerings (open shapes + a few barre shapes)
 data/partials*.json            learned partial-amplitude profiles (per pitch, per string×pitch)
 src/
-  main.js       app bootstrap, mic lifecycle, settings UI, presets, dev hooks (?autostart&mode&chord&open)
-  settings.js   localStorage persistence
+  config.js     every tunable, with the evidence; ?cfg= / --cfg= overrides
+  main.js       app bootstrap, mic lifecycle, settings UI, presets, telemetry wiring, dev hooks (?autostart&mode&chord&open&recmax&cfg)
+  settings.js   localStorage persistence (+ change listeners)
+  telemetry.js  event batching to serve.py
   diagrams.js   SVG chord-chart renderer (strings carry data-string for live colouring)
-  detect.js     chord detector: frames → NNLS activations → chroma → template scores (+ candidate scoping, twins)
+  detect.js     chord detector: frames → NNLS activations → chroma → template scores, confidence, StableRule (+ candidate scoping, twins)
   theory.js     which chords belong together (shared key / root) — drives the next-chord pick
   practice.js   chord-bunny game loop
-  listen.js     free-form recognizer (mic OR file)
+  listen.js     free-form recognizer (mic OR file) with display hold
   strings-ui.js per-string bars, sustain timers, strum readout, diagram lighting
-  audio/        AudioWorklet capture + FrameStream
+  audio/        AudioWorklet capture, FrameStream (consumers + taps), Recorder (segments → WAV upload)
   dsp/          fft, wav decoder, PitchAnalyzer (NNLS), StringTracker
+tools/          evaluation and session tools (see docs/ARCHITECTURE.md for which question each answers)
+tests/          node:test unit tests + a telemetry fixture
+docs/           ARCHITECTURE.md, BENCH.md (generated), FRICTION_LOG.md
+telemetry/      per-session event logs (gitignored)
+recordings/     per-session WAV segments (gitignored; start.sh points at /mnt/aegis when present)
 ```
 
 ## Future ideas

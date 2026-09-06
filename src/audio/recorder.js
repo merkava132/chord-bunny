@@ -59,7 +59,10 @@ export class Recorder {
     a.chunks.push(Float32Array.from(chunk));
     a.len += chunk.length;
     if (loud) a.lastLoud = tsEnd;
-    if (tsEnd - a.lastLoud >= this.tail || a.len >= this.maxLen) this._finish(tsEnd, a.len >= this.maxLen);
+    // a take that went quiet ends here (continues=false) even if it is also at
+    // maxLen — otherwise the flag lies and an empty follow-on segment starts
+    if (tsEnd - a.lastLoud >= this.tail) this._finish(tsEnd, false);
+    else if (a.len >= this.maxLen) this._finish(tsEnd, true);
   }
 
   _finish(tsEnd, continues) {

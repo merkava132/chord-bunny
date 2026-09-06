@@ -1,5 +1,5 @@
 // Line a session's recordings up with what the practice screen showed.
-//   node tools/session_labels.mjs [session-id | latest] [--rec-dir DIR] [--replay]
+//   node tools/session_labels.mjs [session-id | latest] [--rec-dir=DIR] [--replay]
 // Writes recordings/<session>/labels.jsonl: one row per (segment × screen
 // state) with sample offsets, and prints the reconstruction. --replay also
 // runs each labelled interval through the detector (basic + enabled
