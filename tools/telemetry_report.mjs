@@ -54,7 +54,14 @@ if (pairs.length) {
   const perTarget = new Map();
   for (const p of pairs) { const e = perTarget.get(p.cur) || { shown: 0, matched: 0, heard: new Map() }; e.shown++; perTarget.set(p.cur, e); }
   for (const m of matches) { const e = perTarget.get(m.target); if (e) e.matched++; }
-  for (const m of misses) { const e = perTarget.get(m.target); if (e) e.heard.set(m.heard[0], (e.heard.get(m.heard[0]) || 0) + 1); }
+  // a miss within 1 s of the advance where the previous target is heard is just the old chord still ringing
+  let carry = 0;
+  for (const m of misses) {
+    const i = pairs.findIndex(p => p.t > m.t) - 1, prev = pairs[i - 1]?.cur;
+    if (m.sinceShown < 1 && m.heard[0] === prev) { carry++; continue; }
+    const e = perTarget.get(m.target); if (e) e.heard.set(m.heard[0], (e.heard.get(m.heard[0]) || 0) + 1);
+  }
+  if (carry) console.log(`  (${carry} of ${misses.length} misses were the previous chord still ringing within 1 s of the advance)`);
   for (const [id, e] of [...perTarget.entries()].sort((a, b) => b[1].shown - a[1].shown)) {
     const instead = [...e.heard.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k}×${v}`).join(' ');
     console.log(`  ${id.padEnd(7)} shown ${String(e.shown).padStart(2)}  matched ${String(e.matched).padStart(2)}${instead ? `  heard instead: ${instead}` : ''}`);

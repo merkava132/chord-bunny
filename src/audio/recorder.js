@@ -6,7 +6,10 @@
 //   offset = (ev.ts - seg.ts0) * sampleRate
 
 export class Recorder {
-  constructor({ sampleRate, session, gate = 0.004, preRollSec = 0.5, tailSec = 2, maxSec = 60, onSegment = null }) {
+  // gate: RMS over the last ~100 ms (not per 10 ms chunk — a key click peaks
+  // at 0.016 for a few ms and was opening segments while the user typed;
+  // over 100 ms it's ≈0.002, a quiet strum ≈0.01)
+  constructor({ sampleRate, session, gate = 0.006, gateSec = 0.1, preRollSec = 0.5, tailSec = 2, maxSec = 60, onSegment = null }) {
     this.sr = sampleRate;
     this.session = session;
     this.gate = gate;
@@ -20,6 +23,9 @@ export class Recorder {
     this.enabled = true;
     this.uploaded = 0;
     this.lastTs = 0;
+    this.gateChunks = Math.max(1, Math.round(gateSec * sampleRate / 512));
+    this.energy = [];                 // per-chunk mean square, last gateChunks
+    this.energySum = 0;
   }
 
   // chunk: Float32Array of raw samples; tsEnd: stream time at the chunk's end
@@ -28,7 +34,10 @@ export class Recorder {
     if (tsEnd < this.lastTs) { this.stop(this.lastTs); this.pre = []; }   // stream clock reset (re-attach)
     this.lastTs = tsEnd;
     let ss = 0; for (let i = 0; i < chunk.length; i++) ss += chunk[i] * chunk[i];
-    const loud = Math.sqrt(ss / chunk.length) >= this.gate;
+    const ms = ss / chunk.length;
+    this.energy.push(ms); this.energySum += ms;
+    while (this.energy.length > this.gateChunks) this.energySum -= this.energy.shift();
+    const loud = Math.sqrt(Math.max(0, this.energySum) / this.gateChunks) >= this.gate;
     const ts0 = tsEnd - chunk.length / this.sr;
     if (!this.active) {
       if (!loud) {

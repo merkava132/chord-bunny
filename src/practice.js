@@ -140,10 +140,10 @@ export class PracticeMode {
   }
 
   _onStableChord(ids) {
-    if (!settings.get('autoAdvance')) return;
     if (!this._isMatch(ids)) return;
-    telemetry.log('match', { ts: this._ts(), target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1) });
-    this._matched();
+    const auto = !!settings.get('autoAdvance');
+    telemetry.log('match', { ts: this._ts(), target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1), advanced: auto });
+    if (auto) this._matched();
   }
 
   _matched() {
