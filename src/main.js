@@ -218,6 +218,7 @@ function _wireTelemetry(d) {
   d.onFrame = (f) => {
     n++;
     const playing = f.scores !== null;
+    if (playing && f.confidence >= 0.25 && recorder) recorder.noteMusic(f.t);
     if (playing ? n % 10 !== 0 : n % 50 !== 0) return;
     const ev = { ts: +f.t.toFixed(3), level: +f.level.toFixed(4), peak: +f.peak.toFixed(3), clip: +f.clip.toFixed(3) };
     if (playing) {

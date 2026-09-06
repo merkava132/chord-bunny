@@ -24,6 +24,8 @@ export class Recorder {
     this.uploaded = 0;
     this.lastTs = 0;
     this.gateChunks = Math.max(1, Math.round(gateSec * sampleRate / 512));
+    this.lastMusic = -1e9;            // stream time of the last chord-like detector frame (noteMusic)
+    this.dropped = 0;
     this.energy = [];                 // per-chunk mean square, last gateChunks
     this.energySum = 0;
   }
@@ -62,6 +64,7 @@ export class Recorder {
     const a = this.active;
     this.active = null;
     if (!a || a.len < this.sr * 0.3) return;                 // ignore blips
+    if (this.lastMusic < a.ts0 - 0.5) { this.dropped++; if (continues) this.active = { chunks: [], len: 0, ts0: tsEnd, lastLoud: tsEnd }; return; }   // no music in it
     const pcm = new Int16Array(a.len);
     let o = 0;
     for (const c of a.chunks) for (let i = 0; i < c.length; i++, o++) pcm[o] = Math.max(-32768, Math.min(32767, Math.round(c[i] * 32767)));
@@ -74,6 +77,10 @@ export class Recorder {
       .catch(() => {});
     if (continues) this.active = { chunks: [], len: 0, ts0: tsEnd, lastLoud: tsEnd };   // long take: keep going seamlessly
   }
+
+  // The detector saw a chord-like frame at stream time ts. A finished segment
+  // with no such frame (keyboard clicks, bumps) is dropped, not uploaded.
+  noteMusic(ts) { this.lastMusic = ts; }
 
   // flush whatever is in progress (page hide)
   stop(tsEnd) { if (this.active) this._finish(tsEnd ?? (this.active.ts0 + this.active.len / this.sr), false); }
