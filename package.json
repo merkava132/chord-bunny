@@ -1,0 +1,22 @@
+{
+  "name": "chord-bunny",
+  "version": "0.3.0",
+  "description": "Guitar chord transition trainer that listens (vanilla JS, no dependencies)",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "serve": "python3 serve.py",
+    "test": "node --test tests/*.test.mjs",
+    "bench": "node tools/bench.mjs",
+    "eval:chords": "node tools/eval_chords.mjs",
+    "eval:hold": "node tools/eval_hold.mjs --minseg=2",
+    "eval:listen": "node tools/eval_listen.mjs",
+    "eval:strings": "node tools/eval_strings.mjs",
+    "calibrate": "node tools/calibrate.mjs",
+    "report": "node tools/telemetry_report.mjs latest",
+    "labels": "node tools/session_labels.mjs latest --replay",
+    "fetch-testdata": "python3 testdata/fetch_guitarset.py"
+  },
+  "engines": { "node": ">=20" }
+}
