@@ -246,6 +246,10 @@ function _wireTelemetry(d) {
   let n = 0;
   d.onFrame = (f) => {
     n++;
+    if (n % 500 === 0) {   // ~10 s: detector cost vs its 21 ms budget (monitoring)
+      telemetry.log('perf', { msPerFrame: +d.perfMs.toFixed(2), maxMs: +d.perfMax.toFixed(1), budgetMs: +(CONFIG.detect.hop / audioCtx.sampleRate * 1000).toFixed(1) });
+      d.perfMax = 0;
+    }
     const playing = f.scores !== null;
     if (playing && f.confidence >= CONFIG.recorder.musicConf && recorder) recorder.noteMusic(f.t);
     if (playing ? n % CONFIG.telemetry.frameEvery !== 0 : n % CONFIG.telemetry.silentEvery !== 0) return;

@@ -237,6 +237,17 @@ export class ChordDetector {
 
   _frame(frame, t) {
     if (!this.running) return;
+    const t0 = performance.now();
+    try { this._frameInner(frame, t); }
+    finally {
+      // cost per frame, EMA; hop is 21 ms so >21 ms means we can't keep up
+      const dt = performance.now() - t0;
+      this.perfMs = this.perfMs === undefined ? dt : 0.98 * this.perfMs + 0.02 * dt;
+      this.perfMax = Math.max(this.perfMax || 0, dt);
+    }
+  }
+
+  _frameInner(frame, t) {
     const level = rms(frame);
     const { rmsGate: RMS_GATE, ema: EMA, smoothingLen: SMOOTHING_LEN } = CONFIG.detect;
     let peak = 0, clipped = 0;

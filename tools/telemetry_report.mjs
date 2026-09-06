@@ -36,6 +36,9 @@ if (fr.length) {
   console.log('  heard (frame share):', [...heard.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${k} ${pct(v, verdict)}`).join('  '));
 }
 
+const perf = by('perf');
+if (perf.length) console.log(`detector cost: ${q(perf.map(p => p.msPerFrame), .5).toFixed(1)} ms/frame median, worst ${Math.max(...perf.map(p => p.maxMs)).toFixed(0)} ms, budget ${perf[0].budgetMs} ms`);
+
 // --- stable runs (how long each verdict held; practice needs ≥ minHold) ---
 const runs = by('run');
 if (runs.length) {
