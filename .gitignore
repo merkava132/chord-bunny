@@ -8,7 +8,7 @@ testdata/audio
 telemetry/
 recordings/
 data/user/
-testdata/hex/
-testdata/notebank/
-testdata/synth/
+testdata/hex
+testdata/notebank
+testdata/synth
 __pycache__/
