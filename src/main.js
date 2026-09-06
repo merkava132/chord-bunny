@@ -2,6 +2,7 @@
 // Wires everything: load chord data, build modes, manage mic/audio context.
 
 import * as settings from './settings.js';
+import { CONFIG, applyOverrides, sensitivityFromSlider } from './config.js';
 import { ChordDetector } from './detect.js';
 import { PracticeMode } from './practice.js';
 import { ListenMode } from './listen.js';
@@ -9,15 +10,15 @@ import { StringTracker } from './dsp/strings.js';
 import { StringsView } from './strings-ui.js';
 import { Recorder } from './audio/recorder.js';
 import * as telemetry from './telemetry.js';
-import { CONFIG, applyOverrides, sensitivityFromSlider } from './config.js';
 
 // ?cfg=detect.lam:0.4,listen.showMs:100 — experiment without editing (logged below)
 const CFG_OVERRIDES = applyOverrides(new URLSearchParams(location.search).get('cfg'));
 
-const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING] = await Promise.all([
+const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING, USER_PROFILE] = await Promise.all([
   fetch('data/chords.json').then(r => r.json()),
   fetch('data/partials.json').then(r => r.json()).catch(() => null),
   fetch('data/partials_by_string.json').then(r => r.json()).catch(() => null),
+  fetch(CONFIG.profile.path).then(r => r.ok ? r.json() : null).catch(() => null),   // personal profile, optional
 ]);
 
 let audioCtx = null;
@@ -128,7 +129,8 @@ settings.onChange((key, value) => {
   if (key === 'telemetry') { telemetry.setEnabled(value); if (recorder) recorder.enabled = value; recStatusEl.hidden = !value; }
   if (key !== 'micEverEnabled') telemetry.log('setting', { key, value });
 });
-telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, chords: ALL_CHORDS.length, settings: settings.all(), config: CONFIG, overrides: CFG_OVERRIDES });
+telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, chords: ALL_CHORDS.length, settings: settings.all(), config: CONFIG, overrides: CFG_OVERRIDES,
+  profile: USER_PROFILE ? { learnedAt: USER_PROFILE.learnedAt, chords: Object.keys(USER_PROFILE.chords || {}) } : null });
 
 // ---------- mode tabs ----------
 function setMode(mode) {
@@ -201,7 +203,7 @@ async function enableMic() {
 }
 
 async function makeDetector() {
-  const d = new ChordDetector({ audioContext: audioCtx, chords: ALL_CHORDS, profiles: PROFILES });
+  const d = new ChordDetector({ audioContext: audioCtx, chords: ALL_CHORDS, profiles: PROFILES, profile: USER_PROFILE });
   d.setSensitivity(sensFromSlider(settings.get('sensitivity')));
   d.setMinHold(settings.get('minHoldMs'));
   stringTracker = new StringTracker({ sampleRate: audioCtx.sampleRate, profiles: PROFILES, profilesByString: PROFILES_BY_STRING });

@@ -73,6 +73,16 @@ export const CONFIG = {
     frameEvery: 10,       // frame samples: every Nth frame while playing (~5/s) …
     silentEvery: 50,      // … and every Nth in silence (~1/s)
   },
+  profile: {
+    // Personal chroma profile (data/user/profile.json, written by
+    // tools/learn_profile.mjs from the player's own matched takes). Template
+    // weights become (1−alpha)·uniform + alpha·profile for chords that have
+    // one. Leave-one-out on the first session (77 intervals, basic chords):
+    // settled-frame accuracy 56→59%, wrong fires 18→14, median delay
+    // 2.21→2.05 s. Absent file → canonical templates, no change.
+    alpha: 0.5,
+    path: 'data/user/profile.json',
+  },
   strings: {
     // per-string tracker defaults live in src/dsp/strings.js (STRING_DEFAULTS);
     // they were tuned on GuitarSet note annotations and are not app-level knobs
