@@ -82,6 +82,7 @@ export const CONFIG = {
     // 2.21→2.05 s. Absent file → canonical templates, no change.
     alpha: 0.5,
     path: 'data/user/profile.json',
+  },
   coach: {
     // Practice hints (src/coach.js). Evaluated only while the target is unmatched.
     afterSec: 3,          // no hints in the first seconds of a new target (chord change)
