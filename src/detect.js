@@ -220,6 +220,9 @@ export class ChordDetector {
   setSensitivity(v) { this.sensitivity = v; }
   setMinHold(ms) { this.minHoldMs = ms; this.stable.win = ms / 1000 * STABLE_WIN; }
 
+  // Audio-stream clock (seconds since attach) — the clock recordings are cut on.
+  streamTime() { return this.capture ? this.capture.stream.written / this.capture.stream.sr : 0; }
+
   // Every chord id that sounds the same as `id` (same pitch-class set).
   equivalents(id) { return this.templateOf.get(id)?.ids || [id]; }
 

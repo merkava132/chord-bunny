@@ -111,13 +111,15 @@ export class PracticeMode {
       this._onStableChord(ids);
       if (this.current && !this._isMatch(ids) && ids[0] !== this.lastMissId) {
         this.lastMissId = ids[0];
-        telemetry.log('miss', { target: this.current.id, heard: ids, conf: +conf.toFixed(2), sinceShown: +(telemetry.now() - this.shownAt).toFixed(1) });
+        telemetry.log('miss', { ts: this._ts(), target: this.current.id, heard: ids, conf: +conf.toFixed(2), sinceShown: +(telemetry.now() - this.shownAt).toFixed(1) });
       }
     };
   }
 
   // Does a detected template (all chord ids that share its notes) satisfy the
   // current target?
+  _ts() { return +(this.getDetector()?.streamTime() ?? 0).toFixed(3); }
+
   _isMatch(ids) {
     const cur = this.current;
     if (!cur || !ids?.length) return false;
@@ -140,7 +142,7 @@ export class PracticeMode {
   _onStableChord(ids) {
     if (!settings.get('autoAdvance')) return;
     if (!this._isMatch(ids)) return;
-    telemetry.log('match', { target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1) });
+    telemetry.log('match', { ts: this._ts(), target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1) });
     this._matched();
   }
 
@@ -162,7 +164,7 @@ export class PracticeMode {
     this.current = a;
     this.next = pickNext(a, enabled);
     this._render(this.current, this.next);
-    telemetry.log('pair', { cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', enabled: enabled.length });
+    telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', enabled: enabled.length });
     this._restartTimer();
     this.hintEl.textContent = settings.get('autoAdvance')
       ? 'play the highlighted chord — it advances when detected'
@@ -176,7 +178,7 @@ export class PracticeMode {
     this.current = this.next;
     this.next = pickNext(this.current, enabled);
     this._render(this.current, this.next);
-    telemetry.log('pair', { cur: this.current.id, next: this.next?.id, reason: timedOut ? 'timer' : 'advance' });
+    telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: timedOut ? 'timer' : 'advance' });
     this._restartTimer();
   }
 
