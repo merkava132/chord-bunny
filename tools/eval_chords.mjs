@@ -8,10 +8,11 @@ import { FFT, hann } from '../src/dsp/fft.js';
 import { buildTemplates, scoreTemplates } from '../src/detect.js';
 import { APP_CHORDS, listExcerpts, loadExcerpt, chordAt, stringsAt } from './guitarset.mjs';
 import fs from 'node:fs';
-import { applyOverrides } from '../src/config.js';
+import { CONFIG, applyOverrides } from '../src/config.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return m ? [m[1], m[2] ?? true] : [a, true]; }));
 if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));   // --cfg=detect.lam:0.4,...
+if (args.listen) applyOverrides(`detect.sizeBonus:${CONFIG.listen.sizeBonus}`);   // --listen: open-world scoring as in listen mode
 const HOP = Number(args.hop || 1024);
 const PROFILES = args.noprof ? null : JSON.parse(fs.readFileSync(new URL('../data/partials.json', import.meta.url)));
 const SUBSET = args.subset || 'open';

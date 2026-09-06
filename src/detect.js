@@ -72,7 +72,9 @@ function mode(arr) {
 // player's own matched takes by tools/learn_profile.mjs) the weights become
 // (1−alpha)·uniform + alpha·profile for chords that have one — the same
 // scorer, tilted toward what this player's chord actually sounds like.
-export function buildTemplates(chords, { profile = null, alpha = 0 } = {}) {
+// `sizeBonus` is the closed-world prior toward richer chords
+// (CONFIG.detect.sizeBonus for practice, CONFIG.listen.sizeBonus for listen).
+export function buildTemplates(chords, { profile = null, alpha = 0, sizeBonus = CONFIG.detect.sizeBonus } = {}) {
   const byKey = new Map();
   const eps = EPS();
   for (const c of chords) {
@@ -81,7 +83,7 @@ export function buildTemplates(chords, { profile = null, alpha = 0 } = {}) {
     if (t) { t.ids.push(c.id); continue; }
     const pcs = pitchClasses(c);
     let mask = 0; for (const pc of pcs) mask |= 1 << pc;
-    let w = null, perfect = Math.log(1 / pcs.length + eps);
+    let w = null, perfect = perfectScore(pcs.length);
     const p = alpha > 0 && profile?.chords?.[c.id]?.chroma;
     if (p) {
       w = new Float32Array(12);
@@ -89,9 +91,14 @@ export function buildTemplates(chords, { profile = null, alpha = 0 } = {}) {
       for (let i = 0; i < 12; i++) w[i] += alpha * p[i];
       perfect = 0; for (let i = 0; i < 12; i++) if (w[i] > 0) perfect += w[i] * Math.log(w[i] + eps);   // score when q = w
     }
-    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, w, prior: CONFIG.detect.prior[c.category] || 0, perfect });
+    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, w, prior: CONFIG.detect.prior[c.category] || 0, bonus: sizeBonus * Math.log(pcs.length), perfect });
   }
   return [...byKey.values()];
+}
+
+// Score of a template whose tones all sit exactly at their expected share 1/|T|
+export function perfectScore(n) {
+  return CONFIG.detect.beta > 0 ? 0 : Math.log(1 / n + EPS());
 }
 
 // Score every template against a chroma vector (sums to 1). Geometric mean of
@@ -104,14 +111,16 @@ export function buildTemplates(chords, { profile = null, alpha = 0 } = {}) {
 // verdict look uncertain once the richer chords are candidates.
 export function scoreTemplates(ch, templates, out = null) {
   const scores = out || new Array(templates.length);
-  const eps = EPS(), lam = CONFIG.detect.lam;
+  const eps = EPS(), { lam, beta } = CONFIG.detect;
   let best = -1;
   for (let i = 0; i < templates.length; i++) {
-    const { pcs, prior, w } = templates[i];
+    const { pcs, prior, bonus, w } = templates[i];
+    const n = pcs.length;
     let s = 0, inside = 0;
-    if (w) { for (let pc = 0; pc < 12; pc++) if (w[pc] > 0) s += w[pc] * Math.log(ch[pc] + eps); for (const pc of pcs) inside += ch[pc]; }
-    else { for (const pc of pcs) { s += Math.log(ch[pc] + eps); inside += ch[pc]; } s /= pcs.length; }
-    s = s - lam * (1 - inside) - prior;
+    if (w) { for (let pc = 0; pc < 12; pc++) if (w[pc] > 0) s += w[pc] * Math.log(ch[pc] + eps); for (const pc of pcs) inside += ch[pc]; }   // profile weights sum to 1
+    else if (beta > 0) { for (const pc of pcs) { s += (Math.pow(ch[pc] * n, beta) - 1) / beta; inside += ch[pc]; } s /= n; }
+    else { for (const pc of pcs) { s += Math.log(ch[pc] + eps); inside += ch[pc]; } s /= n; }
+    s = s + bonus - lam * (1 - inside) - prior;
     scores[i] = s;
     if (best < 0 || s > scores[best]) best = i;
   }
@@ -135,7 +144,9 @@ export function confidenceOf({ scores, best, second }, templates) {
   const c = CONFIG.confidence, t = templates[best];
   const bestScore = scores[best] + t.prior;          // don't dock a sus chord for its own prior
   const secondScore = second >= 0 ? scores[second] : -Infinity;
-  const fit = Math.max(0, Math.min(1, (bestScore - c.poor) / (t.perfect - c.poor)));
+  // fit is about the chroma, so the size bonus (an argmax prior) is taken out;
+  // the margin is the competition as it was actually scored
+  const fit = Math.max(0, Math.min(1, (bestScore - t.bonus - c.poor) / (t.perfect - c.poor)));
   const margin = Math.max(0, Math.min(1, (bestScore - secondScore) / c.margin));
   return c.fitWeight * fit + (1 - c.fitWeight) * margin;
 }
@@ -206,10 +217,11 @@ export class ChordDetector {
   // Asus2/Esus4, Dsus2/Asus4, G/G/B are the same notes to a chroma detector).
   // Fewer candidates → fewer confusions: on GuitarSet the 9 basic chords alone
   // score 87% vs 73% for all 53.
-  setCandidates(ids) {
+  setCandidates(ids, opts = {}) {
     this.candidateIds = ids ? [...ids] : null;
+    this.candidateOpts = opts;
     const want = ids ? new Set(ids) : null;
-    this.templates = buildTemplates(want ? this.chords.filter(c => want.has(c.id)) : this.chords, { profile: this.profile, alpha: CONFIG.profile.alpha });
+    this.templates = buildTemplates(want ? this.chords.filter(c => want.has(c.id)) : this.chords, { profile: this.profile, alpha: CONFIG.profile.alpha, ...opts });
     this.templateOf = new Map(this.templates.map(t => [t.id, t]));
     this.scores = new Array(this.templates.length);
     if (this.history) this.history.length = 0;   // (constructor calls this before history exists)
@@ -220,7 +232,7 @@ export class ChordDetector {
   setMinHold(ms) { this.minHoldMs = ms; this.stable.win = ms / 1000 * CONFIG.stable.win; }
 
   // Swap the personal profile (after relearning) and rebuild the templates.
-  setProfile(profile) { this.profile = profile; this.setCandidates(this.candidateIds); }
+  setProfile(profile) { this.profile = profile; this.setCandidates(this.candidateIds, this.candidateOpts || {}); }
 
   // Audio-stream clock (seconds since attach) — the clock recordings are cut on.
   streamTime() { return this.capture ? this.capture.stream.written / this.capture.stream.sr : 0; }

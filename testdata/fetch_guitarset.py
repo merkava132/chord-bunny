@@ -4,14 +4,23 @@ the multi-GB zips: reads the zip central directory over HTTP range requests
 and inflates only the entries we want.
 
 Usage: ./fetch_guitarset.py [--all-covered] [name-fragment ...]
+       ./fetch_guitarset.py --hex [name-fragment ...]
 Default subset: comp + solo takes of the 7 progressions fully covered by
 data/chords.json, for all 6 players.  Writes testdata/audio/*.wav and
 testdata/jams/*.jams.
+--hex fetches the debleeded hexaphonic-pickup takes (6 channels, one per
+string, aligned with the JAMS note annotations) into testdata/hex/ — the raw
+material for tools/note_bank.mjs. Default hex subset: HEX_DEFAULT below.
 """
 import io, json, os, struct, sys, urllib.request, zipfile, zlib
 
 REC = 'https://zenodo.org/api/records/3371780/files/{}/content'
 AUDIO_ZIP = REC.format('audio_mono-mic.zip')
+HEX_ZIP = REC.format('audio_hex-pickup_debleeded.zip')
+# a few players × styles that between them cover most (string, fret) pairs
+HEX_DEFAULT = ['00_SS3-98-C_comp', '01_Rock3-148-C_comp', '02_Rock1-130-A_comp', '03_BN1-129-Eb_comp',
+               '04_Funk1-97-C_comp', '05_SS3-98-C_solo', '00_Rock3-148-C_solo', '02_BN3-154-E_solo',
+               '01_Funk2-119-G_solo', '03_Jazz1-130-D_solo', '04_SS1-68-E_comp', '05_Rock2-142-D_solo']
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROGRESSIONS = ['SS3-98-C', 'Rock3-148-C', 'Jazz3-150-C', 'Rock1-130-A',
                 'Jazz1-130-D', 'Funk1-97-C', 'Jazz3-150-C']
@@ -64,9 +73,40 @@ def fetch_entry(url, e):
     assert (zlib.crc32(data) & 0xFFFFFFFF) == e['crc'], 'crc mismatch'
     return data
 
+def fetch_hex(frags):
+    os.makedirs(os.path.join(HERE, 'hex'), exist_ok=True)
+    os.makedirs(os.path.join(HERE, 'jams'), exist_ok=True)
+    ann_path = os.path.join(HERE, 'annotation.zip')
+    if not os.path.exists(ann_path):
+        urllib.request.urlretrieve(REC.format('annotation.zip'), ann_path)
+    ann = zipfile.ZipFile(ann_path)
+    print('reading hex central directory…', file=sys.stderr)
+    entries = central_directory(HEX_ZIP)
+    names = sorted(entries)
+    frags = frags or HEX_DEFAULT
+    sel = [n for n in names if any(f in n for f in frags)]
+    print(f'{len(sel)} hex files selected ({sum(entries[n]["csize"] for n in sel)/1e6:.0f} MB)', file=sys.stderr)
+    for n in sel:
+        out = os.path.join(HERE, 'hex', os.path.basename(n))
+        base = os.path.basename(n).split('_hex')[0]
+        jn = base + '.jams'
+        jout = os.path.join(HERE, 'jams', jn)
+        if not os.path.exists(jout):
+            try:
+                with open(jout, 'wb') as f: f.write(ann.read(jn))
+            except KeyError:
+                print(f'  no jams for {base}', file=sys.stderr)
+        if os.path.exists(out) and os.path.getsize(out) == entries[n]['usize']:
+            continue
+        print(f'  {n} ({entries[n]["csize"]/1e6:.1f} MB)', file=sys.stderr)
+        with open(out, 'wb') as f: f.write(fetch_entry(HEX_ZIP, entries[n]))
+    print('done', file=sys.stderr)
+
 def main(argv):
     want_all = '--all-covered' in argv
     frags = [a for a in argv if not a.startswith('--')]
+    if '--hex' in argv:
+        return fetch_hex(frags)
     os.makedirs(os.path.join(HERE, 'audio'), exist_ok=True)
     os.makedirs(os.path.join(HERE, 'jams'), exist_ok=True)
 

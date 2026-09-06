@@ -194,3 +194,29 @@ fought back. Newest at the bottom.
   A `--telemetry-dir` flag would be cleaner.
 - bench.mjs runs the seven eval processes in parallel: 36 s wall on the
   7800X3D instead of ~3 min.
+## 2026-09-06 — real-note chord bench (bench branch)
+
+- GuitarSet's `audio_hex-pickup_debleeded.zip` (3.6 GB) is fine over HTTP
+  range requests: 12 takes = 119 MB, ~2 min. Files are 6-channel 44.1 kHz,
+  channel order = string order (low E first), matching the JAMS
+  `data_source` index.
+- The JAMS note annotations miss re-plucks: cutting a note "until the next
+  annotated onset on that string" ran straight through the next chord on
+  ~half the notes (an A2 appearing 0.4 s into a C chord). Truncating at the
+  first energy rise (> +6 dB over the running 60 ms minimum) fixed it.
+- Bank notes differ in loudness by > 20 dB; without per-note RMS
+  normalisation the open G string vanished from every chord.
+- Pickup vs mic timbre is huge (low E: 2nd partial 2.2× the fundamental on
+  the mic, 0.37× on the pickup; some partials nulled by pickup position) —
+  but the NNLS dictionary learned on mic recordings scores the pickup clips
+  within 2 points of a pickup-learned one. Template logic, not timbre, was
+  the problem for extended chords.
+- Scoring insight: the geo-mean has a hidden log(4/3) bias toward triads
+  (`sizeBonus` in config.js). The full likelihood normalisation flips the
+  bias the other way (triads collapse to 3%); the useful range is 0.2–0.4 and
+  it must not leak into the confidence calibration (first attempt subtracted
+  the bonus from the winner only, which halved the margin and every fire
+  rate — check `conf` columns after touching scoring).
+- `--listen` on the tools was a no-op in eval_synth for one run because the
+  sed pattern anchored on a comment that file didn't have; the "listen all"
+  table was identical to "all" — a tell worth remembering.

@@ -5,10 +5,11 @@ import fs from 'node:fs';
 import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
 import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf } from '../src/detect.js';
-import { applyOverrides } from '../src/config.js';
+import { CONFIG, applyOverrides } from '../src/config.js';
 
 const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return [m[1], m[2] ?? true]; }));
 if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));   // --cfg=detect.lam:0.4,...
+if (args.listen) applyOverrides(`detect.sizeBonus:${CONFIG.listen.sizeBonus}`);   // --listen: open-world scoring as in listen mode
 const file = process.argv.slice(2).find(a => !a.startsWith('--'));
 if (!file) { console.error('usage: node tools/replay.mjs <file.wav> [--chords=...] [--sens=0.35] [--all]'); process.exit(1); }
 const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));

@@ -2,7 +2,10 @@
 // any channel count (mixed down to mono). Returns { sampleRate, samples }.
 // Works on ArrayBuffer (browser) or Node Buffer.
 
-export function decodeWav(buf) {
+// decodeWav(buf) → { sampleRate, samples } (channels averaged to mono).
+// decodeWav(buf, { split: true }) also returns `channels: Float32Array[]`
+// (hexaphonic pickup files: one channel per string, low E first).
+export function decodeWav(buf, { split = false } = {}) {
   const dv = buf instanceof ArrayBuffer
     ? new DataView(buf)
     : new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -32,6 +35,7 @@ export function decodeWav(buf) {
   const bytesPer = bits / 8;
   const frames = Math.floor(dataLen / (bytesPer * channels));
   const out = new Float32Array(frames);
+  const chans = split ? Array.from({ length: channels }, () => new Float32Array(frames)) : null;
   const inv = 1 / channels;
   for (let i = 0; i < frames; i++) {
     let acc = 0;
@@ -46,8 +50,21 @@ export function decodeWav(buf) {
       else if (bits === 8) v = (dv.getUint8(o) - 128) / 128;
       else throw new Error(`unsupported bit depth ${bits}`);
       acc += v;
+      if (chans) chans[c][i] = v;
     }
     out[i] = acc * inv;
   }
-  return { sampleRate, samples: out };
+  return chans ? { sampleRate, samples: out, channels: chans } : { sampleRate, samples: out };
+}
+
+// 16-bit PCM mono WAV from Float32 samples (clipped to ±1).
+export function encodeWav(samples, sampleRate) {
+  const n = samples.length, buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, sampleRate, true); dv.setUint32(28, sampleRate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  str(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767))), true);
+  return Buffer.from(buf);
 }
