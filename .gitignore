@@ -5,3 +5,5 @@ testdata/audio
 *.flac
 *.ogg
 .DS_Store
+telemetry/
+recordings/

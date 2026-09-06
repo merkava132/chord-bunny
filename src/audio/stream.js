@@ -8,7 +8,11 @@ export class FrameStream {
     this.ring = new Float32Array(ringSize);
     this.written = 0;              // absolute sample count
     this.consumers = [];
+    this.taps = [];                // fn(chunk, tsEnd): every raw chunk, unframed (recorder)
   }
+
+  addTap(fn) { this.taps.push(fn); return fn; }
+  removeTap(fn) { this.taps = this.taps.filter(x => x !== fn); }
 
   addConsumer({ size, hop, fn }) {
     const c = { size, hop, fn, next: size, frame: new Float32Array(size) };
@@ -27,6 +31,7 @@ export class FrameStream {
     this.ring.set(chunk.subarray(0, first), pos);
     if (first < chunk.length) this.ring.set(chunk.subarray(first), 0);
     this.written += chunk.length;
+    for (const tap of this.taps) tap(chunk, this.written / this.sr);
     for (const c of this.consumers) {
       while (this.written >= c.next) {
         if (this.written - c.next > R - c.size) { c.next = this.written; break; }   // fell behind; skip ahead

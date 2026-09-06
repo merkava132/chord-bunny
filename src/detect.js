@@ -206,11 +206,14 @@ export class ChordDetector {
   _frame(frame, t) {
     if (!this.running) return;
     const level = rms(frame);
+    let peak = 0, clipped = 0;
+    for (let i = 0; i < frame.length; i++) { const a = Math.abs(frame[i]); if (a > peak) peak = a; if (a > 0.985) clipped++; }
+    const clip = clipped / frame.length;
     if (level < RMS_GATE) {
       this.history.length = 0;
       this.lastStable = null;
       this._emitUpdate(null, 0, level);
-      if (this.onFrame) this.onFrame({ act: null, chroma: null, level, scores: null, t });
+      if (this.onFrame) this.onFrame({ act: null, chroma: null, level, peak, clip, scores: null, t, templates: this.templates });
       return;
     }
     const an = this.analyzer;
@@ -231,7 +234,7 @@ export class ChordDetector {
     const smoothed = m.count >= Math.ceil(SMOOTHING_LEN * 0.6) ? m.value : null;
 
     this._emitUpdate(smoothed, confidence, level);
-    if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, scores, t, bestId, confidence });
+    if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, peak, clip, scores, t, bestId, smoothed, confidence, templates: this.templates });
 
     const now = performance.now();
     if (smoothed && smoothed === this.lastStable) {

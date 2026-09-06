@@ -11,6 +11,7 @@ import { renderInto } from './diagrams.js';
 import { pcSubset, PC_INDEX } from './detect.js';
 import { pickNext } from './theory.js';
 import * as settings from './settings.js';
+import * as telemetry from './telemetry.js';
 
 export class PracticeMode {
   constructor({ root, allChords, getEnabled, getDetector, onCurrent = null }) {
@@ -36,6 +37,8 @@ export class PracticeMode {
     this.current = null;
     this.next = null;
     this.lastSeed = 0;
+    this.shownAt = 0;                 // telemetry: when the current target appeared
+    this.lastMissId = null;
 
     // controls
     root.querySelector('#reroll-btn').addEventListener('click', () => this.rerollPair());
@@ -95,10 +98,22 @@ export class PracticeMode {
     if (!det) return;
     this._syncCandidates();
     det.onUpdate = (id, conf, level, ids) => {
+      const match = id ? this._isMatch(ids) : false;
       this.heardEl.textContent = id ? this._heardName(ids) : '—';
-      this.confFill.style.width = `${Math.round(conf * 100)}%`;
+      // Meter: the detection threshold sits at the midpoint, threshold + 0.25
+      // fills it. Green while what it hears is the target.
+      const thr = det.sensitivity;
+      const fill = id ? Math.max(0, Math.min(1, 0.5 + (conf - thr) / 0.5)) : Math.max(0, Math.min(0.45, conf / thr * 0.45));
+      this.confFill.style.width = `${Math.round(fill * 100)}%`;
+      this.confFill.dataset.state = !id ? 'none' : match ? 'match' : 'other';
     };
-    det.onStable = (id, conf, ids) => this._onStableChord(ids);
+    det.onStable = (id, conf, ids) => {
+      this._onStableChord(ids);
+      if (this.current && !this._isMatch(ids) && ids[0] !== this.lastMissId) {
+        this.lastMissId = ids[0];
+        telemetry.log('miss', { target: this.current.id, heard: ids, conf: +conf.toFixed(2), sinceShown: +(telemetry.now() - this.shownAt).toFixed(1) });
+      }
+    };
   }
 
   // Does a detected template (all chord ids that share its notes) satisfy the
@@ -125,6 +140,7 @@ export class PracticeMode {
   _onStableChord(ids) {
     if (!settings.get('autoAdvance')) return;
     if (!this._isMatch(ids)) return;
+    telemetry.log('match', { target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1) });
     this._matched();
   }
 
@@ -146,6 +162,7 @@ export class PracticeMode {
     this.current = a;
     this.next = pickNext(a, enabled);
     this._render(this.current, this.next);
+    telemetry.log('pair', { cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', enabled: enabled.length });
     this._restartTimer();
     this.hintEl.textContent = settings.get('autoAdvance')
       ? 'play the highlighted chord — it advances when detected'
@@ -155,9 +172,11 @@ export class PracticeMode {
   advance() {
     const enabled = this._enabledList();
     if (enabled.length < 2) return;
+    const timedOut = settings.get('timerEnabled') && performance.now() >= this.timerEnd;
     this.current = this.next;
     this.next = pickNext(this.current, enabled);
     this._render(this.current, this.next);
+    telemetry.log('pair', { cur: this.current.id, next: this.next?.id, reason: timedOut ? 'timer' : 'advance' });
     this._restartTimer();
   }
 
@@ -168,6 +187,8 @@ export class PracticeMode {
 
   _render(cur, next) {
     if (this.onCurrent) this.onCurrent(cur);
+    this.shownAt = telemetry.now();
+    this.lastMissId = null;
     this.curName.textContent  = cur  ? cur.name  : '—';
     this.nextName.textContent = next ? next.name : '—';
     this.curMeta.textContent  = cur  ? cur.fullName : '';

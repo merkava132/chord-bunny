@@ -264,7 +264,7 @@ export class StringTracker {
     this._emit({ type: 'strum', t: p.t, strings: struck, direction: dir, tau, slopeMs: slope * 1000, spreadMs: spread * 1000, timed: timed.length });
   }
 
-  _emit(ev) { if (this.onEvent) this.onEvent(ev); }
+  _emit(ev) { if (this.onEvent) this.onEvent(ev); if (this.onAnyEvent) this.onAnyEvent(ev); }
 
   // Per-frame presence decision.
   present(h) {

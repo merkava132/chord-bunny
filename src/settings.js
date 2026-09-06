@@ -12,7 +12,11 @@ const DEFAULTS = {
   sensitivity: 55,                  // 0-100, higher = stricter cosine threshold
   minHoldMs: 350,                   // how long a chord must be held to count
   micEverEnabled: false,            // sticky: if user enabled mic before, try to auto-prompt
+  telemetry: true,                  // log events + record non-silent audio to the local server
 };
+
+const listeners = [];
+export function onChange(fn) { listeners.push(fn); }
 
 let cache = null;
 
@@ -36,6 +40,7 @@ export function set(key, value) {
   load();
   cache[key] = value;
   save();
+  for (const fn of listeners) fn(key, value);
 }
 export function update(patch) {
   load();

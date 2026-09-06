@@ -96,3 +96,28 @@ fought back. Newest at the bottom.
 - `?open=chord` (main.js dev hook) opens a settings panel so a plain
   `--headless=old --screenshot --virtual-time-budget=4000` capture shows the
   picker without driving CDP.
+
+## 2026-09-05 late — "the audio doesn't work"
+
+- **Firefox had pinned the HDMI output *monitor* as the microphone** for
+  localhost:8732 (`pactl list source-outputs` → `target.object = alsa_output…hdmi-stereo`).
+  `pactl move-source-output` is reverted because the client asked for that
+  device explicitly; the fix is in Firefox's mic permission for the site. The
+  app now logs the selected track label in the `mic` telemetry event so this
+  is visible without pactl.
+- **60 dB of input gain**: ALSA `Capture` +30 dB and `Front Mic Boost` +30 dB
+  on the ALC897 front jack → 10% of samples clipped flat while strumming.
+  `amixer -c 2 sset 'Front Mic Boost' 0` → rms ≈0.025, peak ≈0.15, clean.
+  Frame telemetry now carries `peak`/`clip` so clipping shows up in the report.
+- Recording uploads on `pagehide` are lost when the segment is over ~60 KB
+  (fetch keepalive limit); the last take of a session can be missing. Segments
+  end on 2 s of silence, so in normal practice this rarely matters.
+- `rm` is aliased `-i` too (as `mv`/`cp`): `command rm -f` in scripts.
+- Listen mode flickered through unrelated chords at note onsets (user
+  report); now shows a chord only after it has held 160 ms and keeps the last
+  one through gaps < 400 ms. Costs ~6 points on the e2e "heard == GT" metric
+  (65% vs 71%) because display lags the verdict; the telemetry `verdict` gaps
+  measure the flicker directly.
+- The practice meter showed raw confidence (typically 0.4–0.6 → half a bar).
+  It now puts the sensitivity threshold at the midpoint and threshold + 0.25
+  at full, green while the heard chord is the target.

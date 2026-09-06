@@ -15,6 +15,9 @@
     <button class="mode-btn active" data-mode="practice" role="tab">practice</button>
     <button class="mode-btn"        data-mode="listen"   role="tab">listen</button>
   </nav>
+  <div class="rec-status" id="rec-status" title="recording non-silent audio to this machine for debugging" hidden>
+    <span class="dot" aria-hidden="true"></span>rec
+  </div>
   <div class="mic-status" id="mic-status" title="microphone">
     <span class="dot" aria-hidden="true"></span>
     <span class="label">mic off</span>
@@ -114,6 +117,10 @@
       <label class="num">
         <span>min hold (ms)</span>
         <input type="number" id="min-hold" min="100" max="2000" step="50" value="350">
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="telemetry-cb" checked>
+        log &amp; record locally for debugging (telemetry/, recordings/ — never leaves this machine)
       </label>
     </details>
     <details>

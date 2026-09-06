@@ -1,6 +1,13 @@
 // Listen mode: free-form chord recognizer. Source is mic OR an audio file.
 
 import { renderInto } from './diagrams.js';
+import * as telemetry from './telemetry.js';
+
+// Note onsets smear the chroma for a few frames and the argmax wanders through
+// unrelated chords. Show a chord only once it has held for SHOW_MS, and keep
+// the last one through gaps shorter than GAP_MS instead of flashing "—".
+const SHOW_MS = 160;
+const GAP_MS = 400;
 
 export class ListenMode {
   constructor({ root, allChords, getDetector, getAudioContext, getMicSource, onChord = null }) {
@@ -28,6 +35,8 @@ export class ListenMode {
 
     this.audioEl = null;
     this.fileSource = null;
+    this.candidate = null;            // { id, since }
+    this.lastSeen = 0;
   }
 
   enable() {
@@ -53,13 +62,23 @@ export class ListenMode {
     det.setCandidates(null);          // free listening: every chord is a candidate
     const idToChord = new Map(this.allChords.map(c => [c.id, c]));
     det.onUpdate = (id, conf, level, ids) => {
+      const now = performance.now();
       if (id) {
+        if (id === this.shownId) { this.lastSeen = now; this.candidate = null; return; }
+        if (!this.candidate || this.candidate.id !== id) { this.candidate = { id, since: now, ids, conf }; return; }
+        if (now - this.candidate.since < SHOW_MS) return;
         const c = idToChord.get(id);
         const twins = (ids || []).filter(x => x !== id).map(x => idToChord.get(x)?.name || x);
         this.bigChord.textContent = c ? c.name : '—';
         this.subEl.textContent = c ? (twins.length ? `${c.fullName} · same notes as ${twins.join(', ')}` : c.fullName) : '';
-        if (id !== this.shownId) { renderInto(this.diagEl, c); this.shownId = id; if (this.onChord && c) this.onChord(c); }
+        renderInto(this.diagEl, c);
+        this.shownId = id; this.lastSeen = now; this.candidate = null;
+        if (this.onChord && c) this.onChord(c);
+        telemetry.log('verdict', { id, ids, conf: +conf.toFixed(2) });
       } else {
+        this.candidate = null;
+        if (this.shownId && now - this.lastSeen < GAP_MS) return;
+        if (this.shownId) telemetry.log('verdict', { id: null });
         this.shownId = null;
         this.bigChord.textContent = '—';
         this.subEl.textContent = 'listening…';

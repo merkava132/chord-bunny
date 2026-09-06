@@ -125,3 +125,28 @@ src/
 - BPM-creep mode: speed up as you nail transitions.
 - Strum-tightness trainer: metronome + the onset detector we already have.
 - Chord audio playback via Tone.js `PluckSynth`.
+
+## Telemetry & recordings (local only)
+
+`serve.py` (what `./start.sh` runs) is the static server plus a sink for two
+things the page posts to it, both switchable off with the "log & record
+locally" toggle under *detection*:
+
+- **Events** → `telemetry/<session>.jsonl`: session/settings, mic state, a
+  frame sample ~5×/s while playing (level, peak, clipping, best chord,
+  confidence, top-3 template scores, chroma), strums, practice `pair` /
+  `match` / `miss` (what it heard instead of the target), listen verdicts.
+- **Audio** → `recordings/<session>/seg-NNNN.wav` (or `$CB_REC_DIR`, which
+  `start.sh` points at `/mnt/aegis/chord-bunny/recordings` when that drive
+  exists): every stretch of non-silence with 0.5 s pre-roll and a 2 s tail,
+  16-bit mono at the AudioContext rate, capped at 60 s per file and 3 GB
+  total (oldest pruned). Segment times are on the audio-stream clock (`ts`),
+  the same clock as the frame events.
+
+Nothing is sent anywhere; `python -m http.server` would just drop the POSTs.
+
+- `node tools/telemetry_report.mjs [latest|file]` — session summary: signal
+  level and clipping, confidence distribution, what was heard, per-target
+  match rate and confusions, listen-mode flicker, strum stats.
+- `node tools/replay.mjs recordings/<session>/seg-0003.wav [--chords=basic,sus]`
+  — run a take through the detector offline and print the chord timeline.

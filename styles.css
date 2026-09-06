@@ -72,6 +72,15 @@ header h1 {
 }
 .mic-status.on .dot { background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); }
 .mic-status.error .dot { background: var(--warn); }
+.rec-status {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.8rem; color: var(--fg-dim);
+  padding: 6px 10px;
+}
+.rec-status + .mic-status { margin-left: 0; }
+.rec-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg-3); }
+.rec-status.on .dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
 
 main {
   flex: 1;
@@ -149,9 +158,11 @@ main {
 .meter .fill {
   width: 0%;
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  transition: width .12s linear;
+  background: var(--accent);
+  transition: width .12s linear, background .15s;
 }
+.meter .fill[data-state="match"] { background: var(--accent-2); }
+.meter .fill[data-state="none"] { background: var(--fg-dim); }
 .hint { color: var(--fg-dim); font-size: 0.85rem; }
 
 /* ---------- controls ---------- */

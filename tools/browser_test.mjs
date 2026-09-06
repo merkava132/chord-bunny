@@ -1,5 +1,5 @@
 // End-to-end browser test: headless Chrome + a WAV as the fake microphone.
-//   node tools/browser_test.mjs <excerpt-name> [--mode=listen|practice] [--chord=G] [--shots=dir] [--port=9333] [--app=http://localhost:8732]
+//   node tools/browser_test.mjs <excerpt-name> [--mode=listen|practice] [--chord=G] [--shots=dir] [--port=9333] [--app=http://localhost:8732] [--extra=recmax=5]
 // Requires the app served at --app (default http://localhost:8732/, ./start.sh).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -19,7 +19,7 @@ const ex = loadExcerpt(name);
 const wav = path.resolve('testdata/audio', `${name}_mic.wav`);
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-chrome-'));
 const APP = String(args.app || 'http://localhost:8732').replace(/\/$/, '');
-const url = `${APP}/?autostart=1&mode=${MODE}${args.chord ? `&chord=${args.chord}` : ''}`;
+const url = `${APP}/?autostart=1&mode=${MODE}${args.chord ? `&chord=${args.chord}` : ''}${args.extra ? `&${args.extra}` : ''}`;
 
 const chrome = spawn('google-chrome', [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars',

@@ -7,6 +7,8 @@ import { PracticeMode } from './practice.js';
 import { ListenMode } from './listen.js';
 import { StringTracker } from './dsp/strings.js';
 import { StringsView } from './strings-ui.js';
+import { Recorder } from './audio/recorder.js';
+import * as telemetry from './telemetry.js';
 
 const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING] = await Promise.all([
   fetch('data/chords.json').then(r => r.json()),
@@ -22,6 +24,8 @@ let stringTracker = null;
 let practice = null;
 let listen = null;
 let curView = null, listenView = null;   // StringsView per mode
+let recorder = null;
+const recStatusEl = document.getElementById('rec-status');
 
 const micStatusEl = document.getElementById('mic-status');
 const micLabelEl  = micStatusEl.querySelector('.label');
@@ -115,6 +119,16 @@ showDiagCb.addEventListener('change', () => {
   if (practice) practice._showDiagramsToggle();
 });
 
+// ---------- telemetry / recording toggle ----------
+const telemetryCb = document.getElementById('telemetry-cb');
+telemetryCb.checked = settings.get('telemetry') !== false;
+telemetryCb.addEventListener('change', () => settings.set('telemetry', telemetryCb.checked));
+settings.onChange((key, value) => {
+  if (key === 'telemetry') { telemetry.setEnabled(value); if (recorder) recorder.enabled = value; recStatusEl.hidden = !value; }
+  if (key !== 'micEverEnabled') telemetry.log('setting', { key, value });
+});
+telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, chords: ALL_CHORDS.length, settings: settings.all() });
+
 // ---------- mode tabs ----------
 function setMode(mode) {
   settings.set('mode', mode);
@@ -127,6 +141,7 @@ function setMode(mode) {
   if (mode === 'practice') { listen?.disable(); practice?.enable(); _attachMicToDetector(); }
   else                     { practice?.disable(); listen?.enable(); }
   _activateStringView(mode);
+  telemetry.log('mode', { mode });
 }
 document.querySelectorAll('.mode-btn').forEach(b => {
   b.addEventListener('click', () => setMode(b.dataset.mode));
@@ -163,6 +178,7 @@ async function enableMic() {
     detector.start({});
     setMicStatus('on', 'mic on');
     settings.set('micEverEnabled', true);
+    telemetry.log('mic', { state: 'on', sampleRate: audioCtx.sampleRate, label: micStream.getAudioTracks()[0]?.label || '' });
 
     // re-wire active mode now that detector is live
     if (settings.get('mode') === 'practice') practice?.enable();
@@ -170,6 +186,7 @@ async function enableMic() {
   } catch (err) {
     console.error(err);
     setMicStatus('error', 'mic blocked');
+    telemetry.log('mic', { state: 'error', error: String(err) });
   }
 }
 
@@ -181,7 +198,38 @@ async function makeDetector() {
   d.addConsumer({ size: stringTracker.o.fftSize, hop: stringTracker.o.hop, fn: (frame, t) => stringTracker.process(frame, t) });
   await d.init();
   _wireStringViews();
+  _wireTelemetry(d);
   return d;
+}
+
+// Frame samples (~5/s while playing, ~1/s in silence), strum events, and the
+// segment recorder on the raw stream. All local: see serve.py.
+function _wireTelemetry(d) {
+  let n = 0;
+  d.onFrame = (f) => {
+    n++;
+    const playing = f.scores !== null;
+    if (playing ? n % 10 !== 0 : n % 50 !== 0) return;
+    const ev = { ts: +f.t.toFixed(3), level: +f.level.toFixed(4), peak: +f.peak.toFixed(3), clip: +f.clip.toFixed(3) };
+    if (playing) {
+      const order = f.scores.map((sc, i) => i).sort((a, b) => f.scores[b] - f.scores[a]).slice(0, 3);
+      ev.id = f.smoothed; ev.best = f.bestId; ev.conf = +f.confidence.toFixed(2);
+      ev.top = order.map(i => [f.templates[i].id, +f.scores[i].toFixed(2)]);
+      ev.chroma = Array.from(f.chroma, v => +v.toFixed(2));
+    }
+    telemetry.log('frame', ev);
+  };
+  if (stringTracker) stringTracker.onAnyEvent = (ev) => {
+    if (ev.type !== 'strum') return;
+    telemetry.log('strum', { ts: +ev.t.toFixed(3), strings: ev.strings, direction: ev.direction, spreadMs: +ev.spreadMs.toFixed(1), timed: ev.timed, frets: Array.from(stringTracker.frets || []) });
+  };
+  const recMax = Number(new URLSearchParams(location.search).get('recmax')) || 60;   // ?recmax=5 for tests
+  recorder = new Recorder({ sampleRate: audioCtx.sampleRate, session: telemetry.session, maxSec: recMax, onSegment: (meta) => telemetry.log('rec', meta) });
+  recorder.enabled = settings.get('telemetry') !== false;
+  d.capture.stream.addTap((chunk, ts) => recorder.push(chunk, ts));
+  recStatusEl.hidden = !recorder.enabled;
+  setInterval(() => recStatusEl.classList.toggle('on', recorder.recording), 250);
+  addEventListener('pagehide', () => recorder.stop());
 }
 
 // The string tracker follows the target chord (practice) or the detected
@@ -262,6 +310,8 @@ if (!micStream) hintEl.textContent = 'click the mic chip (top right) or anywhere
 //   ?autostart=1        enable mic without a gesture (headless testing with a fake mic)
 //   ?mode=listen        force a mode
 //   ?chord=G            force the practice target chord
+//   ?open=chord,detect  open settings panels (see below)
+//   ?recmax=5           cap recording segments at N seconds (default 60)
 //   ?open=chord,detect  open the settings panels whose summary starts with these
 const params = new URLSearchParams(location.search);
 if (params.get('open')) {
