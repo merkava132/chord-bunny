@@ -20,8 +20,9 @@ export function jamsToAppId(label) {
   const root = ENH[m[1]] ?? m[1];
   const q = QUAL[m[2]];
   if (q === undefined) return null;
-  const id = root + q;
-  return APP_IDS.has(id) ? id : null;
+  const FLAT = { 'A#': 'Bb', 'D#': 'Eb', 'G#': 'Ab', 'C#': 'Db', 'F#': 'Gb' };
+  for (const r of [root, FLAT[root]]) if (r && APP_IDS.has(r + q)) return r + q;
+  return null;
 }
 
 export function listExcerpts(filter = () => true) {

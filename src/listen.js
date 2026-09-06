@@ -50,12 +50,14 @@ export class ListenMode {
   _wireDetector() {
     const det = this.getDetector();
     if (!det) return;
+    det.setCandidates(null);          // free listening: every chord is a candidate
     const idToChord = new Map(this.allChords.map(c => [c.id, c]));
-    det.onUpdate = (id, conf) => {
+    det.onUpdate = (id, conf, level, ids) => {
       if (id) {
         const c = idToChord.get(id);
+        const twins = (ids || []).filter(x => x !== id).map(x => idToChord.get(x)?.name || x);
         this.bigChord.textContent = c ? c.name : '—';
-        this.subEl.textContent = c ? c.fullName : '';
+        this.subEl.textContent = c ? (twins.length ? `${c.fullName} · same notes as ${twins.join(', ')}` : c.fullName) : '';
         if (id !== this.shownId) { renderInto(this.diagEl, c); this.shownId = id; if (this.onChord && c) this.onChord(c); }
       } else {
         this.shownId = null;

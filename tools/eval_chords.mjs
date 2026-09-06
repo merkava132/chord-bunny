@@ -5,6 +5,7 @@
 // Reports the original chroma detector ("old") alongside NNLS-based scorers.
 import { PitchAnalyzer, frames, rms, voicingPitches } from '../src/dsp/analyzer.js';
 import { FFT, hann } from '../src/dsp/fft.js';
+import { buildTemplates, scoreTemplates } from '../src/detect.js';
 import { APP_CHORDS, listExcerpts, loadExcerpt, chordAt, stringsAt } from './guitarset.mjs';
 import fs from 'node:fs';
 
@@ -20,6 +21,11 @@ const HIST = Number(args.hist ?? 5);              // majority-vote window (frame
 const RMS_GATE = 0.006;
 const OPEN = ['SS3', 'Rock3', 'Rock1'];
 const GT = args.gt || 'instructed';        // instructed | performed
+// --chords=basic,sus,Cmaj7  restrict candidate templates to these categories / ids (GT frames unchanged)
+const CAND = args.chords ? new Set(String(args.chords).split(',')) : null;
+const CANDIDATES = CAND ? APP_CHORDS.filter(c => CAND.has(c.category) || CAND.has(c.id)) : APP_CHORDS;
+const PRIOR = Number(args.prior ?? 0);     // subtract from templates outside the 'basic' category
+const PRIORCAT = args.priorcat ? new Set(String(args.priorcat).split(',')) : null;   // …or only from these categories
 
 const PCI = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11, Db: 1, Eb: 3, Gb: 6, Ab: 8, Bb: 10 };
 
@@ -52,13 +58,13 @@ class OldChroma {
 
 // ---------- (b) NNLS scorers ----------
 function buildVoicings(an) {
-  return APP_CHORDS.map(c => {
+  return CANDIDATES.map(c => {
     const pitches = voicingPitches(c.fingering.frets).filter(p => p > 0);
     const idx = pitches.map(p => an.pitchIndex(p)).filter(i => i >= 0 && i < an.nP);
     const pcs = [...new Set(c.notes.map(n => PCI[n]))];
     const chromaT = new Float32Array(12); for (const pc of pcs) chromaT[pc] = 1;
     let s = 0; for (const x of chromaT) s += x * x; s = Math.sqrt(s); for (let i = 0; i < 12; i++) chromaT[i] /= s;
-    return { id: c.id, idx, pcs, chromaT, root: PCI[c.root], h: new Float32Array(idx.length) };
+    return { id: c.id, idx, pcs, chromaT, root: PCI[c.root], h: new Float32Array(idx.length), prior: (PRIORCAT ? PRIORCAT.has(c.category) : c.category !== 'basic') ? PRIOR : 0 };
   });
 }
 const cosine12 = (a, b) => { let d = 0, na = 0; for (let i = 0; i < 12; i++) { d += a[i] * b[i]; na += a[i] * a[i]; } return na > 0 ? d / Math.sqrt(na) : 0; };
@@ -66,13 +72,19 @@ const cosine12 = (a, b) => { let d = 0, na = 0; for (let i = 0; i < 12; i++) { d
 const EPS = Number(args.eps ?? 0.1), LAM = Number(args.lam ?? 0);
 const DUMP = args.dump;
 const RPEN = Number(args.rpen ?? 0.01), RGW = Number(args.rgw ?? 0.5), RMIX = Number(args.rmix ?? 3);                    // scorer name → print confusion/age stats
+// the app's scorer (src/detect.js) on the same candidate list — templates
+// dedupe by pitch-class set, so map template scores back onto voicings
+const APP_T = buildTemplates(CANDIDATES);
+const APP_IDX = CANDIDATES.map(c => APP_T.findIndex(t => t.ids.includes(c.id)));
+const APP_SCORES = new Array(APP_T.length);
 const SCORERS = {
+  app: (an, act, V, ch) => { scoreTemplates(ch, APP_T, APP_SCORES); return V.map((v, i) => APP_SCORES[APP_IDX[i]] - (APP_T[APP_IDX[i]].ids[0] === v.id ? 0 : 1e-6)); },
   chroma: (an, act, V, ch) => V.map(v => cosine12(ch, v.chromaT)),
   // log-likelihood template: geometric mean of chroma on template notes
   // (a missing note is catastrophic) minus mass outside the template
   geo: (an, act, V, ch) => V.map(v => {
     let s = 0, out = 1; for (const pc of v.pcs) { s += Math.log(ch[pc] + EPS); out -= ch[pc]; }
-    return s / v.pcs.length - LAM * out;
+    return s / v.pcs.length - LAM * out - v.prior;
   }),
   geoBass: (an, act, V, ch, bassPc) => V.map(v => {
     let s = 0, out = 1; for (const pc of v.pcs) { s += Math.log(ch[pc] + EPS); out -= ch[pc]; }
@@ -161,6 +173,7 @@ function evalExcerpt(name, totals) {
       if (ok) hit[k]++;
       if (k === DUMP) {
         const c = chordAt(GT === 'performed' ? ex.performed : ex.chords, t);
+        const fam = CAT_OF.get(gt) || '?'; (DUMPS.fam[fam] ||= { n: 0, hit: 0 }); DUMPS.fam[fam].n++; if (ok) DUMPS.fam[fam].hit++;
         const age = Math.min(9, Math.floor((t - c.t0) / 0.1)); (DUMPS.age[age] ||= { n: 0, hit: 0 }); DUMPS.age[age].n++; if (ok) DUMPS.age[age].hit++;
         if (!ok) { const key = `${gt}→${p}`; DUMPS.conf.set(key, (DUMPS.conf.get(key) || 0) + 1); }
       }
@@ -172,16 +185,18 @@ function evalExcerpt(name, totals) {
 
 const names = listExcerpts(f => f.includes('comp') && (SUBSET === 'all' || OPEN.some(s => f.includes(s))));
 const totals = {};
-const DUMPS = { age: [], conf: new Map() };
+const DUMPS = { age: [], conf: new Map(), fam: {} };
+const CAT_OF = new Map(APP_CHORDS.map(c => [c.id, c.category]));
 const t0 = performance.now();
 for (const nm of names) {
   const r = evalExcerpt(nm, totals);
   if (VERBOSE) console.log(nm.padEnd(24), `n=${String(r.n).padStart(4)}`, Object.entries(r.acc).map(([k, v]) => `${k}=${(v * 100).toFixed(0).padStart(3)}%`).join(' '));
 }
-console.log(`gt=${GT} subset=${SUBSET} files=${names.length} hop=${HOP} minStrings=${MIN_STRINGS} smooth=${SMOOTH} hist=${HIST} set=${JSON.stringify(OVERRIDES)} (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
+console.log(`gt=${GT} cand=${CANDIDATES.length} prior=${PRIOR} subset=${SUBSET} files=${names.length} hop=${HOP} minStrings=${MIN_STRINGS} smooth=${SMOOTH} hist=${HIST} set=${JSON.stringify(OVERRIDES)} (${((performance.now() - t0) / 1000).toFixed(1)}s)`);
 if (DUMP) {
   const errs = [...DUMPS.conf.values()].reduce((a, b) => a + b, 0);
   console.log(`[${DUMP}] accuracy by 100ms since chord change:`, DUMPS.age.map(b => `${(100 * b.hit / b.n).toFixed(0)}%`).join(' '));
+  console.log(`[${DUMP}] by GT family:`, Object.entries(DUMPS.fam).map(([f, b]) => `${f} ${(100 * b.hit / b.n).toFixed(0)}% (n=${b.n})`).join(', '));
   console.log(`[${DUMP}] top confusions:`, [...DUMPS.conf.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${k} ${(100 * v / errs).toFixed(0)}%`).join(', '));
 }
 console.log('  ' + Object.entries(totals).map(([k, c]) => `${k}=${(100 * c.hit / c.n).toFixed(1)}%`).join('  ') + `  [${totals.old.n} chord frames]`);

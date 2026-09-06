@@ -1,8 +1,15 @@
 // Practice mode: chord-bunny game.
-//   - shows current + next chord
+//   - shows current + next chord (next is always a musically related chord,
+//     see theory.js)
 //   - advances when detector confirms, OR on timer (if enabled), OR manually
+//   - the detector only scores the chords you enabled plus the basic nine,
+//     and a basic chord you did NOT enable counts for a richer target on the
+//     same root that contains it (Am heard while practising Am7 alone is
+//     fine — you didn't ask to tell them apart)
 
 import { renderInto } from './diagrams.js';
+import { pcSubset, PC_INDEX } from './detect.js';
+import { pickNext } from './theory.js';
 import * as settings from './settings.js';
 
 export class PracticeMode {
@@ -60,6 +67,21 @@ export class PracticeMode {
     this._showDiagramsToggle();
   }
 
+  // Enabled set changed (chord picker): re-scope the detector, fix the pair.
+  onEnabledChanged() {
+    this._syncCandidates();
+    const ids = new Set(this.getEnabled());
+    if (!this.current || !ids.has(this.current.id) || !this.next || !ids.has(this.next.id)) this.rerollPair(true);
+  }
+
+  _syncCandidates() {
+    const det = this.getDetector();
+    if (!det) return;
+    const ids = new Set(this.getEnabled());
+    for (const c of this.allChords) if (c.category === 'basic') ids.add(c.id);
+    det.setCandidates([...ids]);
+  }
+
   disable() {
     if (this.timerHandle) clearInterval(this.timerHandle);
     this.timerHandle = null;
@@ -71,16 +93,38 @@ export class PracticeMode {
   _wireDetector() {
     const det = this.getDetector();
     if (!det) return;
-    det.onUpdate = (id, conf) => {
-      this.heardEl.textContent = id || '—';
+    this._syncCandidates();
+    det.onUpdate = (id, conf, level, ids) => {
+      this.heardEl.textContent = id ? this._heardName(ids) : '—';
       this.confFill.style.width = `${Math.round(conf * 100)}%`;
     };
-    det.onStable = (id) => this._onStableChord(id);
+    det.onStable = (id, conf, ids) => this._onStableChord(ids);
   }
 
-  _onStableChord(id) {
+  // Does a detected template (all chord ids that share its notes) satisfy the
+  // current target?
+  _isMatch(ids) {
+    const cur = this.current;
+    if (!cur || !ids?.length) return false;
+    if (ids.includes(cur.id)) return true;
+    const enabled = new Set(this.getEnabled());
+    const heard = this.allChords.find(c => c.id === ids[0]);
+    return !!heard && !ids.some(id => enabled.has(id))
+      && PC_INDEX[heard.root] === PC_INDEX[cur.root] && pcSubset(heard, cur);
+  }
+
+  // Name to show for a detected template: the target if it matches, else the
+  // first enabled chord with those notes, else the first one.
+  _heardName(ids) {
+    if (this._isMatch(ids)) return this.current.name;
+    const enabled = new Set(this.getEnabled());
+    const id = ids.find(x => enabled.has(x)) || ids[0];
+    return this.allChords.find(c => c.id === id)?.name || id;
+  }
+
+  _onStableChord(ids) {
     if (!settings.get('autoAdvance')) return;
-    if (!this.current || id !== this.current.id) return;
+    if (!this._isMatch(ids)) return;
     this._matched();
   }
 
@@ -98,16 +142,9 @@ export class PracticeMode {
       this.hintEl.textContent = 'pick at least 2 chords below';
       return;
     }
-    let a, b;
-    if (fresh || !this.current) {
-      a = enabled[Math.floor(Math.random() * enabled.length)];
-    } else {
-      a = this.current;
-    }
-    do { b = enabled[Math.floor(Math.random() * enabled.length)]; }
-    while (b.id === a.id);
+    const a = (fresh || !this.current) ? enabled[Math.floor(Math.random() * enabled.length)] : this.current;
     this.current = a;
-    this.next = b;
+    this.next = pickNext(a, enabled);
     this._render(this.current, this.next);
     this._restartTimer();
     this.hintEl.textContent = settings.get('autoAdvance')
@@ -119,10 +156,7 @@ export class PracticeMode {
     const enabled = this._enabledList();
     if (enabled.length < 2) return;
     this.current = this.next;
-    let b;
-    do { b = enabled[Math.floor(Math.random() * enabled.length)]; }
-    while (b.id === this.current.id);
-    this.next = b;
+    this.next = pickNext(this.current, enabled);
     this._render(this.current, this.next);
     this._restartTimer();
   }

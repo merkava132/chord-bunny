@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>chord-bunny</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="alternate icon" href="favicon.ico" sizes="32x32">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -90,9 +92,14 @@
       <div class="chord-picker" id="chord-picker"></div>
       <div class="picker-actions">
         <button data-pick="basic">basic only</button>
+        <button data-pick="pop">pop set</button>
+        <button data-pick="mysong" title="Girls Dead Monster — My Song (Angel Beats!)">my song</button>
         <button data-pick="all">all</button>
         <button data-pick="none">clear</button>
       </div>
+      <p class="picker-note">Practice only listens for the chords you tick (plus the basic nine).
+      Sus pairs share notes — Asus2 = Esus4, Dsus2 = Asus4, Csus2 = Gsus4, Fsus2 = Csus4 —
+      as do slash chords and their parent, so either one counts.</p>
     </details>
     <details>
       <summary>detection</summary>
@@ -114,8 +121,15 @@
       <div class="about">
         <p>Each 186 ms window of audio is decomposed onto harmonic templates for every
         pitch on the neck (learned from real guitar recordings), folded to pitch classes, and
-        scored against the chord list. On the GuitarSet room-mic benchmark this gets 82% of
-        frames right where the old chroma detector got 71%.</p>
+        scored against the chord list. On the GuitarSet room-mic benchmark this gets 87% of
+        frames right with the basic chords as candidates (old chroma detector: 71%). Every
+        extra candidate is a chance to be wrong, so practice mode scores only your ticked
+        chords plus the basic nine; listen mode scores all 53.</p>
+        <p>A 7th or 9th is one string among five or six, so richer chords are scored with a
+        bonus for explaining more of the sound; otherwise the plain triad would always win.
+        Sus chords get a small handicap because a major chord with a weak third sounds like
+        one. Next chords are chosen so the transition is one you'd meet in a song: same key,
+        or same root.</p>
         <p>For the strings, a second analysis runs every 6 ms with one template per string of
         the shape you're holding. A strum is detected from the spectral flux; each string's
         onset is timed from the steepest rise of its activation, which gives the direction

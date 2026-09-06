@@ -35,8 +35,8 @@ function renderChordPicker() {
   for (const c of ALL_CHORDS) {
     (groups[c.category] ||= []).push(c);
   }
-  const groupOrder = ['basic', 'seventh', 'minor7', 'sus'];
-  const groupLabel = { basic:'basic', seventh:'7th', minor7:'min7', sus:'sus' };
+  const groupOrder = ['basic', 'barre', 'sus', 'add9', 'maj7', 'minor7', 'seventh', 'slash'];
+  const groupLabel = { basic:'basic', barre:'barre', sus:'sus2 / sus4', add9:'add9', maj7:'maj7', minor7:'min7', seventh:'7th', slash:'slash (bass note)' };
   for (const cat of groupOrder) {
     if (!groups[cat]) continue;
     const heading = document.createElement('div');
@@ -57,21 +57,35 @@ function renderChordPicker() {
         if (cb.checked) cur.add(c.id); else cur.delete(c.id);
         settings.set('enabledChords', [...cur]);
         lbl.classList.toggle('on', cb.checked);
+        practice?.onEnabledChanged();
       });
       container.appendChild(lbl);
     }
   }
 }
 
+// Presets. "pop" is what strummed pop / singer-songwriter tunes lean on
+// beyond plain triads; "my song" is Girls Dead Monster's My Song (Angel
+// Beats!) — Am / Asus4 / Asus2 riff, C Em Am7 G F Gsus4 verse, Dsus2 and
+// the Fmaj7 / Cmaj7 / Em7 tail.
+const PRESETS = {
+  basic: () => ALL_CHORDS.filter(c => c.category === 'basic').map(c => c.id),
+  pop: () => ['C', 'G', 'D', 'A', 'E', 'Am', 'Em', 'Dm', 'F', 'Bm', 'F#m',
+              'Cadd9', 'Dsus4', 'Dsus2', 'Asus2', 'Asus4', 'A7sus4',
+              'Cmaj7', 'Fmaj7', 'Am7', 'Em7', 'G/B', 'D/F#', 'C/G'],
+  mysong: () => ['Am', 'Asus4', 'Asus2', 'Em', 'C', 'Am7', 'G', 'F', 'Gsus4',
+                 'D', 'Dsus2', 'Fsus4', 'Fmaj7', 'Cmaj7', 'Em7'],
+  all: () => ALL_CHORDS.map(c => c.id),
+  none: () => [],
+};
 document.querySelectorAll('.picker-actions button').forEach(btn => {
   btn.addEventListener('click', () => {
-    const action = btn.dataset.pick;
-    let next;
-    if (action === 'basic') next = ALL_CHORDS.filter(c => c.category === 'basic').map(c => c.id);
-    else if (action === 'all') next = ALL_CHORDS.map(c => c.id);
-    else if (action === 'none') next = [];
-    settings.set('enabledChords', next);
+    const preset = PRESETS[btn.dataset.pick];
+    if (!preset) return;
+    const known = new Set(ALL_CHORDS.map(c => c.id));
+    settings.set('enabledChords', preset().filter(id => known.has(id)));
     renderChordPicker();
+    practice?.onEnabledChanged();
   });
 });
 
