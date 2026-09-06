@@ -65,6 +65,29 @@ single note and always score close. `scoreTemplates` excludes them from the
 confidence runner-up, and `CONFIG.detect.lam` (mass outside the template)
 lets the richer chord win when its extra note is really there.
 
+## Personal profile (calibration)
+
+A template scores a chroma q as Σ w·log(q+ε) with w uniform on the chord
+tones. `tools/learn_profile.mjs` learns, per chord, the median chroma over the
+settled part of the player's matched practice intervals (recordings +
+labels.jsonl) and `buildTemplates(chords, { profile, alpha })` blends it in:
+w = (1−α)·uniform + α·profile for chords that have one (`CONFIG.profile.alpha`
+0.5). Chords without a profile stay canonical, and the "perfect" score used by
+the confidence fit is recomputed as Σ w·log(w+ε). The file lives at
+`data/user/profile.json` (per install, gitignored); the app loads it at start
+and `POST /api/profile/learn` (the "learn from my recordings" button) reruns
+the tool and hot-swaps it via `detector.setProfile()`. Leave-one-out on the
+first session (77 intervals, basic chords): settled-frame accuracy 56→59%,
+wrong fires 18→14, median delay 2.21→2.05 s.
+
+## Progressions
+
+`data/progressions.json` holds named chord sequences (My Song's sections,
+I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in D). With
+`settings.sequence` set to one of them, practice follows the sequence
+instead of drawing related pairs; its chords are always detection candidates;
+"new pair" restarts it; `pair` events carry `sequence` and `index`.
+
 ## Configuration
 
 `src/config.js` is the only place a tunable lives, each with the evidence for
@@ -87,12 +110,14 @@ Batched every 2 s to `POST /api/telemetry?session=<id>` and appended to
 | `frame` | `ts, level, peak, clip` (+ while playing: `id` smoothed verdict, `best` raw argmax, `conf`, `top` [[id, score]×3], `chroma[12]`) | every 10th frame while playing (~5/s), every 50th in silence |
 | `run` | `id, ts0, dur` | the smoothed verdict changed; how long the previous one held (≥ 0.1 s only) |
 | `strum` | `ts, strings[{string, t, peak, muted, doubled, inferred, pitch}], direction, spreadMs, timed, frets` | string tracker detected a strum |
-| `pair` | `ts, cur, next, reason` (`fresh`/`reroll`/`advance`/`timer`), `enabled` | practice screen changed |
+| `pair` | `ts, cur, next, reason` (`fresh`/`reroll`/`advance`/`timer`), `enabled` or `sequence, index` | practice screen changed (random pair or progression step) |
 | `match` | `ts, target, heard[], sinceShown, advanced` | StableRule fired the target (advanced=false when auto-advance is off) |
 | `miss` | `ts, target, heard[], conf, sinceShown` | StableRule fired something else (first of each id per target) |
 | `verdict` | `id, ids, conf` (or `id: null`) | listen display changed |
 | `rec` | `seg, ts0, ts1, dur, continues` | a recording segment was uploaded |
-| `hint` | `ts, target, kind, text` | coach showed a hint (src/coach.js, UI branch) |
+| `hint` | `ts, target, kind, text` | coach showed a hint (src/coach.js) |
+| `perf` | `msPerFrame, maxMs, budgetMs` | every ~10 s: detector cost vs the hop budget (0.3 of 21 ms in headless Chrome) |
+| `profile` | `chords{id: n}, sessions[]` | the personal profile was relearned from the app |
 
 `tools/telemetry_report.mjs` turns a file into a session summary;
 `tools/session_labels.mjs` joins it with the recordings.
@@ -125,6 +150,7 @@ oldest-first past `--max-rec-mb` (3000).
 | `GET /api/status` | `{telemetryDir, recDir, recBytes, maxRecBytes, sessions[]}` |
 | `POST /api/telemetry?session=ID` | body = JSON lines, appended |
 | `POST /api/audio?session=ID&seg=N&sr=&ts0=&ts1=` | body = int16 PCM → WAV + segments.jsonl, then prune |
+| `POST /api/profile/learn` | runs `tools/learn_profile.mjs --all --write data/user/profile.json`, returns the summary |
 
 Session ids must match `[A-Za-z0-9_.-]{1,80}` (400 otherwise). Nothing
 leaves the machine; `python -m http.server` would just drop the POSTs.
@@ -144,6 +170,8 @@ leaves the machine; `python -m http.server` would just drop the POSTs.
 | `replay.mjs` | chord timeline of one WAV through the app's detector | any WAV |
 | `browser_test.mjs` | end to end in headless Chrome with a WAV as the fake mic | GuitarSet |
 | `learn_profiles.mjs` | re-learn `data/partials*.json` | GuitarSet hex |
+| `learn_profile.mjs` | learn the player's per-chord chroma (`data/user/profile.json`) and evaluate it leave-one-out | telemetry + recordings |
+| `coach_replay.mjs` | which hints the coach would have given in a session | telemetry |
 | `trace.mjs`, `probe.mjs`, `diag.mjs` | per-frame dumps for one strum | any WAV |
 
 `npm test` runs the unit tests (`tests/`, < 1 s, no audio).
@@ -155,7 +183,7 @@ leaves the machine; `python -m http.server` would just drop the POSTs.
 - **try a scorer variant**: add a function to `SCORERS` in `tools/eval_chords.mjs` (it receives the analyzer, activations, voicings, chroma, bass pitch class and the magnitude spectrum) and compare against `app`; when it wins, move the logic into `scoreTemplates` so the app and the bench stay one code path.
 - **add a config knob**: a leaf in `src/config.js` with a comment stating the evidence; read it through `CONFIG.x.y` at use time (not copied into a module constant) so `?cfg=` overrides apply.
 - **add a telemetry event**: `telemetry.log('name', {…})` with `ts` from `detector.streamTime()` when it relates to audio; document it in the table above; teach `tools/telemetry_report.mjs` to summarise it.
-- **add a coach rule**: `src/coach.js` (UI branch) keeps a table of pure rules `(target chord, recent frames, recent strums) → hint | null`; add a row and a case to `tools/coach_replay.mjs`'s expectations.
+- **add a coach rule**: `src/coach.js` keeps a table of pure rules `(target chord, recent frames, recent strums) → hint | null`; add a row and a case to `tools/coach_replay.mjs`'s expectations.
 
 ## Physical limits (measured, don't re-tune around them)
 
