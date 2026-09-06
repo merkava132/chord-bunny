@@ -11,15 +11,58 @@ import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
 import { applyOverrides } from '../src/config.js';
 
+export const DEFAULT_REC = process.env.CB_REC_DIR || (fs.existsSync('/mnt/aegis/chord-bunny/recordings') ? '/mnt/aegis/chord-bunny/recordings' : path.resolve(import.meta.dirname, '../recordings'));
+export const DEFAULT_TEL = path.resolve(import.meta.dirname, '../telemetry');
+
+// Build recordings/<session>/labels.jsonl for one session. Returns the rows
+// (empty when the session has no recordings). Pure file I/O, no printing.
+export function buildLabels(session, { telDir = DEFAULT_TEL, recDir = DEFAULT_REC } = {}) {
+  const ev = fs.readFileSync(path.join(telDir, session + '.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const segDir = path.join(recDir, session);
+  const segs = fs.existsSync(path.join(segDir, 'segments.jsonl')) ? fs.readFileSync(path.join(segDir, 'segments.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
+  if (!segs.length) return [];
+  const anchors = ev.filter(e => e.type === 'frame' && e.ts !== undefined).map(e => [e.t, e.ts - e.t]);
+  const toTs = (e) => {
+    if (e.ts !== undefined) return e.ts;
+    if (!anchors.length) return null;
+    let best = anchors[0]; for (const a of anchors) if (Math.abs(a[0] - e.t) < Math.abs(best[0] - e.t)) best = a;
+    return +(e.t + best[1]).toFixed(3);
+  };
+  const pairs = ev.filter(e => e.type === 'pair').map(e => ({ ts: toTs(e), t: e.t, cur: e.cur, next: e.next, reason: e.reason }));
+  const matches = ev.filter(e => e.type === 'match').map(e => ({ ts: toTs(e), target: e.target }));
+  const misses = ev.filter(e => e.type === 'miss').map(e => ({ ts: toTs(e), target: e.target, heard: e.heard[0] }));
+  const rows = [];
+  for (const seg of segs) {
+    const file = `seg-${String(seg.seg).padStart(4, '0')}.wav`;
+    const states = pairs.map((p, i) => ({ ...p, end: pairs[i + 1]?.ts ?? Infinity })).filter(p => p.ts !== null && p.end > seg.ts0 && p.ts < seg.ts1);
+    for (const st of states) {
+      const a = Math.max(seg.ts0, st.ts), b = Math.min(seg.ts1, st.end);
+      const m = matches.filter(x => x.ts >= a && x.ts < b && x.target === st.cur);
+      const mi = misses.filter(x => x.ts >= a && x.ts < b);
+      rows.push({ seg: seg.seg, file, ts0: +a.toFixed(3), ts1: +(b === Infinity ? seg.ts1 : b).toFixed(3),
+        offset0: Math.round((a - seg.ts0) * seg.sr), offset1: Math.round(((b === Infinity ? seg.ts1 : b) - seg.ts0) * seg.sr),
+        target: st.cur, next: st.next, shownBecause: st.reason, matched: m.length > 0, matchedAt: m[0] ? +m[0].ts.toFixed(3) : null,
+        heardInstead: mi.map(x => x.heard) });
+    }
+  }
+  fs.writeFileSync(path.join(segDir, 'labels.jsonl'), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  return rows;
+}
+
+// ---- CLI ----
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname;
+if (!isMain) { /* imported as a module */ }
 const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return [m[1], m[2] ?? true]; }));
-if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));   // --cfg=detect.lam:0.4,...
-const TEL = path.resolve(import.meta.dirname, '../telemetry');
-const REC = args['rec-dir'] || process.env.CB_REC_DIR || (fs.existsSync('/mnt/aegis/chord-bunny/recordings') ? '/mnt/aegis/chord-bunny/recordings' : path.resolve(import.meta.dirname, '../recordings'));
+if (isMain && args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));   // --cfg=detect.lam:0.4,...
+const TEL = args['tel-dir'] || DEFAULT_TEL;
+const REC = args['rec-dir'] || DEFAULT_REC;
 let session = process.argv.slice(2).find(a => !a.startsWith('--')) || 'latest';
-if (session === 'latest') {
+if (isMain && session === 'latest') {
   const files = fs.readdirSync(TEL).filter(f => f.endsWith('.jsonl')).sort((a, b) => fs.statSync(path.join(TEL, b)).mtimeMs - fs.statSync(path.join(TEL, a)).mtimeMs);
   session = files[0].replace(/\.jsonl$/, '');
 }
+if (isMain) main();
+function main() {
 const ev = fs.readFileSync(path.join(TEL, session + '.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
 const segDir = path.join(REC, session);
 const segs = fs.existsSync(path.join(segDir, 'segments.jsonl')) ? fs.readFileSync(path.join(segDir, 'segments.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
@@ -100,4 +143,5 @@ if (args.replay) {
       console.log(`  ${row.ts0.toFixed(1).padStart(6)}–${row.ts1.toFixed(1).padEnd(6)} target ${row.target.padEnd(6)} heard: ${[...share.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => `${k} ${(100 * n / v.length).toFixed(0)}%`).join(' ').padEnd(40)} target-frames ${(100 * ok / Math.max(1, v.length)).toFixed(0)}%  fires: ${fired.join(' ') || '—'}`);
     }
   }
+}
 }

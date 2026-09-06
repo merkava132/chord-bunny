@@ -150,3 +150,21 @@ Nothing is sent anywhere; `python -m http.server` would just drop the POSTs.
   match rate and confusions, listen-mode flicker, strum stats.
 - `node tools/replay.mjs recordings/<session>/seg-0003.wav [--chords=basic,sus]`
   — run a take through the detector offline and print the chord timeline.
+
+## Personal profile (calibration to your guitar)
+
+Templates score a chroma with uniform weights on the chord tones. Your guitar,
+mic and strumming produce a characteristic chroma per chord (the analyzer's
+semitone leakage, a strong open A on your D, a quiet top string…).
+`tools/learn_profile.mjs` learns the median chroma of each chord from your
+matched practice takes (recordings + labels) and the detector blends it into
+the template weights (`CONFIG.profile.alpha`, default 0.5). The file
+`data/user/profile.json` is per install and gitignored; without it nothing
+changes. Learn or relearn from the app ("learn from my recordings" in the
+detection panel → `POST /api/profile/learn`) or by hand:
+
+    node tools/learn_profile.mjs --all --alpha=0.5 --write data/user/profile.json
+
+The tool prints a leave-one-interval-out evaluation first (first session, 77
+intervals: settled-frame accuracy 56→59%, wrong fires 18→14, median delay
+2.21→2.05 s), so you can see whether more data helped.

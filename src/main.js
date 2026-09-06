@@ -121,6 +121,32 @@ showDiagCb.addEventListener('change', () => {
   if (practice) practice._showDiagramsToggle();
 });
 
+// ---------- personal profile (CONFIG.profile) ----------
+let userProfile = USER_PROFILE;
+const profileStatusEl = document.getElementById('profile-status');
+const profileBtn = document.getElementById('profile-learn-btn');
+function showProfileStatus(p) {
+  const ids = Object.keys(p?.chords || {});
+  profileStatusEl.textContent = ids.length
+    ? `personal profile: ${ids.length} chords (${ids.join(' ')}), learned ${new Date(p.learnedAt).toLocaleString()}`
+    : 'personal profile: none yet — practise a while, then learn';
+}
+showProfileStatus(userProfile);
+profileBtn.addEventListener('click', async () => {
+  profileBtn.disabled = true; profileStatusEl.textContent = 'learning from your recordings… (up to a minute)';
+  try {
+    const r = await fetch('api/profile/learn', { method: 'POST' });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || r.statusText);
+    userProfile = await fetch(CONFIG.profile.path + '?t=' + Date.now()).then(x => x.json());
+    detector?.setProfile(userProfile);
+    showProfileStatus(userProfile);
+    telemetry.log('profile', { chords: body.chords, sessions: body.sessions });
+  } catch (err) {
+    profileStatusEl.textContent = `could not learn: ${err.message}`;
+  } finally { profileBtn.disabled = false; }
+});
+
 // ---------- telemetry / recording toggle ----------
 const telemetryCb = document.getElementById('telemetry-cb');
 telemetryCb.checked = settings.get('telemetry') !== false;

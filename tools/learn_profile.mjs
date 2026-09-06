@@ -14,6 +14,7 @@ import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
 import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule, PC_INDEX } from '../src/detect.js';
 import { CONFIG, applyOverrides } from '../src/config.js';
+import { buildLabels } from './session_labels.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return [m[1], m[2] ?? true]; }));
 if (args.cfg) applyOverrides(args.cfg);
@@ -25,7 +26,13 @@ const ALPHAS = args.alpha ? String(args.alpha).split(',').map(Number) : [0, 0.3,
 const SENS = Number(args.sens ?? 0.35);
 
 let sessions = process.argv.slice(2).filter(a => !a.startsWith('--'));
-if (!sessions.length) sessions = fs.readdirSync(REC).filter(d => fs.existsSync(path.join(REC, d, 'labels.jsonl')));
+// no sessions given (or --all): every session that has recordings and telemetry; labels are (re)built
+if (!sessions.length || args.all) sessions = fs.readdirSync(REC).filter(d => fs.existsSync(path.join(REC, d, 'segments.jsonl')) && fs.existsSync(path.join(TEL, d + '.jsonl')));
+for (const sid of sessions) {
+  const rows = buildLabels(sid, { telDir: TEL, recDir: REC });
+  if (!rows.length) console.log(`${sid}: no labelled recordings`);
+}
+sessions = sessions.filter(sid => fs.existsSync(path.join(REC, sid, 'labels.jsonl')));
 
 // ---- 1. gather labelled intervals with per-frame chroma (replayed once) ----
 const intervals = [];   // { target, matched, frames: [{ts, chroma, level, silent}] }

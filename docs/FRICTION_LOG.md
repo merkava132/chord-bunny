@@ -142,3 +142,17 @@ fought back. Newest at the bottom.
 - `run` telemetry events (verdict run lengths) are the right lens for this;
   5 Hz frame samples can't see 350 ms holds.
 - Sanity check for recordings: `ts1 - ts0` must equal `bytes / (2 · sr)`.
+
+## 2026-09-06 night — config, profile
+
+- Constants were spread over detect.js / listen.js / practice.js / recorder.js
+  / main.js; the eval tools carried copies of some. Now `src/config.js` with
+  the evidence per value, `?cfg=` / `--cfg=` overrides, and the effective
+  config in the telemetry `session` event.
+- Tools resolved `telemetry/` relative to their own checkout, so running a
+  worktree's tool against the live repo's sessions silently picked the
+  staging sessions ("latest" was a fake-mic test). `--tel-dir` / `--rec-dir`
+  on session_labels and learn_profile; session_labels exports `buildLabels()`.
+- First profile evaluation showed identical numbers for every alpha: the tool
+  passed the raw chord map where buildTemplates expects `{ chords }`. Cheap
+  to catch with a unit test; the tests agent has one.

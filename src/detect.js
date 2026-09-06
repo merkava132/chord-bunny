@@ -207,6 +207,7 @@ export class ChordDetector {
   // Fewer candidates → fewer confusions: on GuitarSet the 9 basic chords alone
   // score 87% vs 73% for all 53.
   setCandidates(ids) {
+    this.candidateIds = ids ? [...ids] : null;
     const want = ids ? new Set(ids) : null;
     this.templates = buildTemplates(want ? this.chords.filter(c => want.has(c.id)) : this.chords, { profile: this.profile, alpha: CONFIG.profile.alpha });
     this.templateOf = new Map(this.templates.map(t => [t.id, t]));
@@ -217,6 +218,9 @@ export class ChordDetector {
 
   setSensitivity(v) { this.sensitivity = v; }
   setMinHold(ms) { this.minHoldMs = ms; this.stable.win = ms / 1000 * CONFIG.stable.win; }
+
+  // Swap the personal profile (after relearning) and rebuild the templates.
+  setProfile(profile) { this.profile = profile; this.setCandidates(this.candidateIds); }
 
   // Audio-stream clock (seconds since attach) — the clock recordings are cut on.
   streamTime() { return this.capture ? this.capture.stream.written / this.capture.stream.sr : 0; }

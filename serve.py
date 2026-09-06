@@ -7,10 +7,11 @@ mic recordings. Nothing leaves the machine.
   POST /api/telemetry?session=ID        body: JSON lines → telemetry/ID.jsonl (appended)
   POST /api/audio?session=ID&seg=N&sr=48000&ts0=..&ts1=..
                                         body: int16 LE mono PCM → REC_DIR/ID/seg-N.wav
+  POST /api/profile/learn               run tools/learn_profile.mjs over all recorded sessions → data/user/profile.json
   GET  /api/status                      what is stored where
 Recordings are pruned oldest-first when REC_DIR exceeds --max-rec-mb.
 """
-import argparse, json, os, re, struct, sys, threading, time
+import argparse, json, os, re, struct, subprocess, sys, threading, time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 
@@ -84,6 +85,8 @@ class Handler(SimpleHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         n = int(self.headers.get('Content-Length') or 0)
         body = self.rfile.read(n) if n else b''
+        if url.path == '/api/profile/learn':
+            return self._learn_profile()
         session = q.get('session', '')
         if not SAFE.match(session):
             return self._reply(400, {'error': 'bad session id'})
@@ -113,6 +116,28 @@ class Handler(SimpleHTTPRequestHandler):
             print(f'api error {url.path}: {e!r}', file=sys.stderr)
             return self._reply(500, {'error': str(e)})
         return self._reply(404, {'error': 'unknown endpoint'})
+
+
+    def _learn_profile(self):
+        # Relearn the personal chroma profile from every recorded session.
+        # Runs the node tool (30–120 s for a few sessions); the page waits.
+        out = os.path.join(ROOT, 'data', 'user', 'profile.json')
+        cmd = ['node', os.path.join(ROOT, 'tools', 'learn_profile.mjs'), '--all', '--alpha=0.5', '--write=' + out,
+               '--rec-dir=' + self.rec_dir, '--tel-dir=' + TELEMETRY_DIR]
+        try:
+            r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=600)
+        except subprocess.TimeoutExpired:
+            return self._reply(504, {'error': 'learning timed out'})
+        except FileNotFoundError as e:
+            return self._reply(500, {'error': f'node not found: {e}'})
+        if r.returncode != 0:
+            return self._reply(500, {'error': (r.stderr or r.stdout)[-2000:]})
+        try:
+            with open(out) as f: prof = json.load(f)
+        except OSError as e:
+            return self._reply(500, {'error': f'no profile written: {e}', 'log': r.stdout[-2000:]})
+        return self._reply(200, {'learnedAt': prof.get('learnedAt'), 'sessions': prof.get('sessions'),
+                                 'chords': {k: v.get('n') for k, v in prof.get('chords', {}).items()}, 'log': r.stdout[-3000:]})
 
 
 def main():
