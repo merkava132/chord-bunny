@@ -9,6 +9,10 @@ import { StringTracker } from './dsp/strings.js';
 import { StringsView } from './strings-ui.js';
 import { Recorder } from './audio/recorder.js';
 import * as telemetry from './telemetry.js';
+import { CONFIG, applyOverrides, sensitivityFromSlider } from './config.js';
+
+// ?cfg=detect.lam:0.4,listen.showMs:100 — experiment without editing (logged below)
+const CFG_OVERRIDES = applyOverrides(new URLSearchParams(location.search).get('cfg'));
 
 const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING] = await Promise.all([
   fetch('data/chords.json').then(r => r.json()),
@@ -94,11 +98,8 @@ document.querySelectorAll('.picker-actions button').forEach(btn => {
 });
 
 // ---------- detection settings sliders ----------
-// Calibrated on GuitarSet (tools/calibrate.mjs, open subset): confidence
-// ≥0.35 (slider default 55) → with the basic nine as candidates 79% of chord
-// frames get a verdict and 94% of those are right; with all 53 candidates
-// (listen mode) 78% / 84%. Slider 0–100 maps to 0.10–0.55.
-const sensFromSlider = (v) => 0.10 + (v / 100) * 0.45;
+// slider 0–100 → confidence threshold (CONFIG.sensitivity; calibration in config.js)
+const sensFromSlider = sensitivityFromSlider;
 const sensSlider = document.getElementById('sensitivity');
 const minHoldInput = document.getElementById('min-hold');
 sensSlider.value = settings.get('sensitivity');
@@ -127,7 +128,7 @@ settings.onChange((key, value) => {
   if (key === 'telemetry') { telemetry.setEnabled(value); if (recorder) recorder.enabled = value; recStatusEl.hidden = !value; }
   if (key !== 'micEverEnabled') telemetry.log('setting', { key, value });
 });
-telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, chords: ALL_CHORDS.length, settings: settings.all() });
+telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, chords: ALL_CHORDS.length, settings: settings.all(), config: CONFIG, overrides: CFG_OVERRIDES });
 
 // ---------- mode tabs ----------
 function setMode(mode) {
@@ -218,8 +219,8 @@ function _wireTelemetry(d) {
   d.onFrame = (f) => {
     n++;
     const playing = f.scores !== null;
-    if (playing && f.confidence >= 0.25 && recorder) recorder.noteMusic(f.t);
-    if (playing ? n % 10 !== 0 : n % 50 !== 0) return;
+    if (playing && f.confidence >= CONFIG.recorder.musicConf && recorder) recorder.noteMusic(f.t);
+    if (playing ? n % CONFIG.telemetry.frameEvery !== 0 : n % CONFIG.telemetry.silentEvery !== 0) return;
     const ev = { ts: +f.t.toFixed(3), level: +f.level.toFixed(4), peak: +f.peak.toFixed(3), clip: +f.clip.toFixed(3) };
     if (playing) {
       const order = f.scores.map((sc, i) => i).sort((a, b) => f.scores[b] - f.scores[a]).slice(0, 3);

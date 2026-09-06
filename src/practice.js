@@ -12,6 +12,7 @@ import { pcSubset, PC_INDEX } from './detect.js';
 import { pickNext } from './theory.js';
 import * as settings from './settings.js';
 import * as telemetry from './telemetry.js';
+import { CONFIG } from './config.js';
 
 export class PracticeMode {
   constructor({ root, allChords, getEnabled, getDetector, onCurrent = null }) {
@@ -100,10 +101,10 @@ export class PracticeMode {
     det.onUpdate = (id, conf, level, ids) => {
       const match = id ? this._isMatch(ids) : false;
       this.heardEl.textContent = id ? this._heardName(ids) : '—';
-      // Meter: the detection threshold sits at the midpoint, threshold + 0.25
-      // fills it. Green while what it hears is the target.
-      const thr = det.sensitivity;
-      const fill = id ? Math.max(0, Math.min(1, 0.5 + (conf - thr) / 0.5)) : Math.max(0, Math.min(0.45, conf / thr * 0.45));
+      // Meter (CONFIG.meter): the detection threshold sits at the midpoint,
+      // threshold + span fills it. Green while what it hears is the target.
+      const thr = det.sensitivity, M = CONFIG.meter;
+      const fill = id ? Math.max(0, Math.min(1, 0.5 + (conf - thr) / (2 * M.span))) : Math.max(0, Math.min(M.idleMax, conf / thr * M.idleMax));
       this.confFill.style.width = `${Math.round(fill * 100)}%`;
       this.confFill.dataset.state = !id ? 'none' : match ? 'match' : 'other';
     };

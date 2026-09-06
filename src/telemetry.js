@@ -4,6 +4,7 @@
 // carry `ts`, the audio-stream clock, which is what recordings are cut on.
 
 import * as settings from './settings.js';
+import { CONFIG } from './config.js';
 
 const T0 = performance.now();
 export const session = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '-' + Math.random().toString(36).slice(2, 6);
@@ -33,6 +34,6 @@ export function flush(beacon = false) {
     .catch(() => { failed++; });
 }
 
-setInterval(() => flush(), 2000);
+setInterval(() => flush(), CONFIG.telemetry.flushMs);
 addEventListener('pagehide', () => flush(true));
 document.addEventListener('visibilitychange', () => { if (document.hidden) flush(true); });

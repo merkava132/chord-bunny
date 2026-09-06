@@ -15,23 +15,17 @@
 import { PitchAnalyzer, rms } from './dsp/analyzer.js';
 import { captureFrom } from './audio/stream.js';
 
-const FFT_SIZE = 8192;
-const HOP = 1024;
-const SMOOTHING_LEN = 5;
-const EMA = 0.5;
-const RMS_GATE = 0.006;
-const EPS = 0.1;
-// Stable-chord rule (practice matching): a chord fires when it is the smoothed
-// verdict on ≥ STABLE_FRAC of the frames in the last minHold × STABLE_WIN
-// seconds. The old "same verdict, uninterrupted, for minHold" rule was reset
-// by the blank frames every strum onset produces; on GuitarSet it matched 83%
-// of ≥2 s chord segments, this one 93% (wrong-chord fires 4% → 7%),
-// tools/eval_hold.mjs.
-const STABLE_WIN = 1.4;
-const STABLE_FRAC = 0.6;
+import { CONFIG } from './config.js';
 
+const D = CONFIG.detect;
+const FFT_SIZE = D.fftSize, HOP = D.hop;
+// read live so ?cfg= overrides and tools/--cfg apply
+const EPS = () => CONFIG.detect.eps;
+
+// Practice matching (see CONFIG.stable): a chord fires when it is the smoothed
+// verdict on ≥ frac of the frames in the last `win` seconds.
 export class StableRule {
-  constructor(winSec = 0.49, frac = STABLE_FRAC) { this.win = winSec; this.frac = frac; this.q = []; this.lastFired = null; }
+  constructor(winSec = CONFIG.stable.minHoldMs / 1000 * CONFIG.stable.win, frac = CONFIG.stable.frac) { this.win = winSec; this.frac = frac; this.q = []; this.lastFired = null; }
   reset() { this.q.length = 0; this.lastFired = null; }
   // feed one smoothed verdict (null = no verdict; silent = below the RMS gate); returns the id that fires, or null
   push(t, id, silent = false) {
@@ -47,16 +41,6 @@ export class StableRule {
     return id;
   }
 }
-// Penalty on chroma mass outside the template. Without it a 4-note template
-// (Cmaj7) can only beat its triad (C) when the 7th is as loud as the average
-// chord tone, which one high string rarely is. On GuitarSet performed labels,
-// basic+7th candidates: 7th recall 23% → 41%, maj7 10% → 27%, min7 15% → 28%,
-// at a cost of 88% → 83% on plain triads. No effect when only triads compete.
-const LAM = 0.5;
-// Sus chords tie with majors whose 3rd is weak (G played with a single B, plus
-// A leaking from D's 3rd partial). A small prior breaks those ties toward the
-// major: basic 79% → 87% with basic+sus candidates, sus recall unchanged (15%).
-const PRIOR = { sus: 0.15 };
 
 export const PC_INDEX = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11 };
 
@@ -91,7 +75,7 @@ export function buildTemplates(chords) {
     if (t) { t.ids.push(c.id); continue; }
     const pcs = pitchClasses(c);
     let mask = 0; for (const pc of pcs) mask |= 1 << pc;
-    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, prior: PRIOR[c.category] || 0, perfect: Math.log(1 / pcs.length + EPS) });
+    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, prior: CONFIG.detect.prior[c.category] || 0, perfect: Math.log(1 / pcs.length + EPS()) });
   }
   return [...byKey.values()];
 }
@@ -106,12 +90,13 @@ export function buildTemplates(chords) {
 // verdict look uncertain once the richer chords are candidates.
 export function scoreTemplates(ch, templates, out = null) {
   const scores = out || new Array(templates.length);
+  const eps = EPS(), lam = CONFIG.detect.lam;
   let best = -1;
   for (let i = 0; i < templates.length; i++) {
     const { pcs, prior } = templates[i];
     let s = 0, inside = 0;
-    for (const pc of pcs) { s += Math.log(ch[pc] + EPS); inside += ch[pc]; }
-    s = s / pcs.length - LAM * (1 - inside) - prior;
+    for (const pc of pcs) { s += Math.log(ch[pc] + eps); inside += ch[pc]; }
+    s = s / pcs.length - lam * (1 - inside) - prior;
     scores[i] = s;
     if (best < 0 || s > scores[best]) best = i;
   }
@@ -128,19 +113,16 @@ export function scoreTemplates(ch, templates, out = null) {
   return { scores, best, second };
 }
 
-// Confidence in the winner: half how well the chroma fits it, half how far
-// the nearest non-nested rival is behind. Tunables shared with
-// tools/calibrate.mjs. margin 0.3 (was 0.5 with 21 chords): at the default
-// threshold 0.35 the basic set gets a verdict on 79% of chord frames at 94%
-// precision (was 69% / 95%), all 53 candidates 78% / 84% (was 68% / 86%).
-export const CONF = { margin: 0.3, fitWeight: 0.5 };
+// Confidence in the winner (see CONFIG.confidence): part how well the chroma
+// fits it, part how far the nearest non-nested rival is behind.
+export const CONF = CONFIG.confidence;
 export function confidenceOf({ scores, best, second }, templates) {
-  const t = templates[best];
+  const c = CONFIG.confidence, t = templates[best];
   const bestScore = scores[best] + t.prior;          // don't dock a sus chord for its own prior
   const secondScore = second >= 0 ? scores[second] : -Infinity;
-  const fit = Math.max(0, Math.min(1, (bestScore + 1.9) / (t.perfect + 1.9)));
-  const margin = Math.max(0, Math.min(1, (bestScore - secondScore) / CONF.margin));
-  return CONF.fitWeight * fit + (1 - CONF.fitWeight) * margin;
+  const fit = Math.max(0, Math.min(1, (bestScore - c.poor) / (t.perfect - c.poor)));
+  const margin = Math.max(0, Math.min(1, (bestScore - secondScore) / c.margin));
+  return c.fitWeight * fit + (1 - c.fitWeight) * margin;
 }
 
 export class ChordDetector {
@@ -154,7 +136,7 @@ export class ChordDetector {
     this.chroma = new Float32Array(12);
     this.history = [];
     this.stable = new StableRule();
-    this.minHoldMs = 350;
+    this.minHoldMs = CONFIG.stable.minHoldMs;
     this.sensitivity = 0.5;
     this.onUpdate = null;
     this.onStable = null;
@@ -218,7 +200,7 @@ export class ChordDetector {
   }
 
   setSensitivity(v) { this.sensitivity = v; }
-  setMinHold(ms) { this.minHoldMs = ms; this.stable.win = ms / 1000 * STABLE_WIN; }
+  setMinHold(ms) { this.minHoldMs = ms; this.stable.win = ms / 1000 * CONFIG.stable.win; }
 
   // Audio-stream clock (seconds since attach) — the clock recordings are cut on.
   streamTime() { return this.capture ? this.capture.stream.written / this.capture.stream.sr : 0; }
@@ -236,6 +218,7 @@ export class ChordDetector {
   _frame(frame, t) {
     if (!this.running) return;
     const level = rms(frame);
+    const { rmsGate: RMS_GATE, ema: EMA, smoothingLen: SMOOTHING_LEN } = CONFIG.detect;
     let peak = 0, clipped = 0;
     for (let i = 0; i < frame.length; i++) { const a = Math.abs(frame[i]); if (a > peak) peak = a; if (a > 0.985) clipped++; }
     const clip = clipped / frame.length;

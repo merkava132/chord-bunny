@@ -1,5 +1,7 @@
 // localStorage-backed settings. No "session" — just persist everything.
 
+import { CONFIG } from './config.js';
+
 const KEY = 'chord-bunny.v1';
 
 const DEFAULTS = {
@@ -9,8 +11,8 @@ const DEFAULTS = {
   autoAdvance: true,
   timerEnabled: false,
   timerSecs: 60,
-  sensitivity: 55,                  // 0-100, higher = stricter cosine threshold
-  minHoldMs: 350,                   // how long a chord must be held to count
+  sensitivity: CONFIG.sensitivity.defaultSlider,   // 0-100 → confidence threshold (config.js)
+  minHoldMs: CONFIG.stable.minHoldMs,              // practice matching window base
   micEverEnabled: false,            // sticky: if user enabled mic before, try to auto-prompt
   telemetry: true,                  // log events + record non-silent audio to the local server
 };

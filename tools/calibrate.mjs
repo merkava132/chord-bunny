@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
 import { APP_CHORDS, listExcerpts, loadExcerpt, chordAt, stringsAt } from './guitarset.mjs';
 import { buildTemplates, scoreTemplates, confidenceOf, CONF } from '../src/detect.js';
+import { applyOverrides } from '../src/config.js';
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return m ? [m[1], m[2] ?? true] : [a, true]; }));
+if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));   // --cfg=detect.lam:0.4,...
 if (args.margin) CONF.margin = Number(args.margin);
 if (args.fitw) CONF.fitWeight = Number(args.fitw);
 const CAND = args.chords ? new Set(String(args.chords).split(',')) : null;

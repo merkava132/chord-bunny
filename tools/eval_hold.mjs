@@ -7,8 +7,10 @@ import fs from 'node:fs';
 import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
 import { APP_CHORDS, listExcerpts, loadExcerpt } from './guitarset.mjs';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
+import { applyOverrides } from '../src/config.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return m ? [m[1], m[2] ?? true] : [a, true]; }));
+if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));   // --cfg=detect.lam:0.4,...
 const CAND = new Set(String(args.chords || 'basic').split(','));
 const T = buildTemplates(APP_CHORDS.filter(c => CAND.has(c.category) || CAND.has(c.id)));
 const SENS = Number(args.sens ?? 0.35), MINSEG = Number(args.minseg ?? 1);

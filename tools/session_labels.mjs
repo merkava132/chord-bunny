@@ -9,8 +9,10 @@ import path from 'node:path';
 import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
 import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
+import { applyOverrides } from '../src/config.js';
 
 const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return [m[1], m[2] ?? true]; }));
+if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));   // --cfg=detect.lam:0.4,...
 const TEL = path.resolve(import.meta.dirname, '../telemetry');
 const REC = args['rec-dir'] || process.env.CB_REC_DIR || (fs.existsSync('/mnt/aegis/chord-bunny/recordings') ? '/mnt/aegis/chord-bunny/recordings' : path.resolve(import.meta.dirname, '../recordings'));
 let session = process.argv.slice(2).find(a => !a.startsWith('--')) || 'latest';

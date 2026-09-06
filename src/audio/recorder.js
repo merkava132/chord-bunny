@@ -5,11 +5,13 @@
 // detector's frame events use, so a telemetry event maps to a sample offset:
 //   offset = (ev.ts - seg.ts0) * sampleRate
 
+import { CONFIG } from '../config.js';
+
 export class Recorder {
   // gate: RMS over the last ~100 ms (not per 10 ms chunk — a key click peaks
   // at 0.016 for a few ms and was opening segments while the user typed;
   // over 100 ms it's ≈0.002, a quiet strum ≈0.01)
-  constructor({ sampleRate, session, gate = 0.006, gateSec = 0.1, preRollSec = 0.5, tailSec = 2, maxSec = 60, onSegment = null }) {
+  constructor({ sampleRate, session, gate = CONFIG.recorder.gate, gateSec = CONFIG.recorder.gateSec, preRollSec = CONFIG.recorder.preRollSec, tailSec = CONFIG.recorder.tailSec, maxSec = CONFIG.recorder.maxSec, onSegment = null }) {
     this.sr = sampleRate;
     this.session = session;
     this.gate = gate;
