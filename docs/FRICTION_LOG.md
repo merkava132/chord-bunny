@@ -142,3 +142,22 @@ fought back. Newest at the bottom.
 - `run` telemetry events (verdict run lengths) are the right lens for this;
   5 Hz frame samples can't see 350 ms holds.
 - Sanity check for recordings: `ts1 - ts0` must equal `bytes / (2 · sr)`.
+
+## 2026-09-06 — coach / monitoring (ui branch)
+
+- The string tracker's onset detector fires on keyboard clicks: 131 "strums"
+  during a typing stretch, activation peaks ≈0.9 vs ≈5.5 for real strums.
+  Anything consuming strum events needs a peak floor (`CONFIG.coach.strumPeakMin`).
+- Telemetry frame samples are 5/s (and 1/s below the gate) while the live
+  detector runs at 47/s, so any rule counting frames behaves differently in
+  replay vs live. Rules now measure windows in seconds (span of playing
+  frames); the replay tool is then a faithful-enough oracle.
+- A "quiet input" rule is hard to make sound from level alone for a player
+  whose median level (0.010) sits close to the gate (0.006); kept as an
+  extreme-case hint with a 60 s repeat interval rather than tuned to fire.
+- The G→Em confusion needed an exception to the "you're playing another
+  chord, stay quiet" guard: when the other chord is explained by the target
+  plus the stray note, the stray-note hint IS the explanation.
+- `getUserMedia` device switching: keep the AudioContext, create a new
+  MediaStreamSource and re-attach; stopping the old tracks first avoids two
+  live captures.
