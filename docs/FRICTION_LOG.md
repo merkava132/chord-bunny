@@ -121,3 +121,24 @@ fought back. Newest at the bottom.
 - The practice meter showed raw confidence (typically 0.4–0.6 → half a bar).
   It now puts the sensitivity threshold at the midpoint and threshold + 0.25
   at full, green while the heard chord is the target.
+
+## 2026-09-06 early — first real telemetry
+
+- **The mic was being initialised twice per click** (mic-chip handler +
+  first-gesture document handler, both before `micStream` is set). Two
+  detectors on two streams: frame events duplicated, practice UI driven by
+  both (one with all 53 candidates), and both streams tapped into the *last*
+  recorder → every 512-sample chunk written twice, WAV time-stretched and
+  unusable (`ts1 - ts0` = 30 s for 60 s of samples was the tell). Guarded
+  `enableMic`; each tap now binds its own recorder. Only visible thanks to
+  the telemetry; the app "worked".
+- **0 of 6 practice targets matched** in the first session although C was
+  heard at 0.5–0.85 confidence over and over. The old stable rule needed one
+  verdict uninterrupted for 350 ms and every strum onset produced blank
+  frames that reset it. Measured on GuitarSet (tools/eval_hold.mjs, basic
+  candidates, chord segments ≥ 2 s): strict 350 ms matched 83%, a windowed
+  rule (≥ 60% of frames in 1.4 × minHold) 93%, wrong-chord fires 4% → 7%.
+  Now `StableRule` in src/detect.js, shared with the eval.
+- `run` telemetry events (verdict run lengths) are the right lens for this;
+  5 Hz frame samples can't see 350 ms holds.
+- Sanity check for recordings: `ts1 - ts0` must equal `bytes / (2 · sr)`.

@@ -21,6 +21,32 @@ const SMOOTHING_LEN = 5;
 const EMA = 0.5;
 const RMS_GATE = 0.006;
 const EPS = 0.1;
+// Stable-chord rule (practice matching): a chord fires when it is the smoothed
+// verdict on ≥ STABLE_FRAC of the frames in the last minHold × STABLE_WIN
+// seconds. The old "same verdict, uninterrupted, for minHold" rule was reset
+// by the blank frames every strum onset produces; on GuitarSet it matched 83%
+// of ≥2 s chord segments, this one 93% (wrong-chord fires 4% → 7%),
+// tools/eval_hold.mjs.
+const STABLE_WIN = 1.4;
+const STABLE_FRAC = 0.6;
+
+export class StableRule {
+  constructor(winSec = 0.49, frac = STABLE_FRAC) { this.win = winSec; this.frac = frac; this.q = []; this.lastFired = null; }
+  reset() { this.q.length = 0; this.lastFired = null; }
+  // feed one smoothed verdict (null = no verdict; silent = below the RMS gate); returns the id that fires, or null
+  push(t, id, silent = false) {
+    if (silent) { this.reset(); return null; }
+    const q = this.q;
+    q.push([t, id]);
+    while (q.length && t - q[0][0] > this.win) q.shift();
+    if (!id || id === this.lastFired || t - q[0][0] < this.win * 0.8) return null;
+    let n = 0;
+    for (const [, x] of q) if (x === id) n++;
+    if (n < this.frac * q.length) return null;
+    this.lastFired = id;
+    return id;
+  }
+}
 // Penalty on chroma mass outside the template. Without it a 4-note template
 // (Cmaj7) can only beat its triad (C) when the 7th is as loud as the average
 // chord tone, which one high string rarely is. On GuitarSet performed labels,
@@ -127,8 +153,7 @@ export class ChordDetector {
     this.smooth = new Float32Array(this.analyzer.nP);
     this.chroma = new Float32Array(12);
     this.history = [];
-    this.lastStable = null;
-    this.stableSince = 0;
+    this.stable = new StableRule();
     this.minHoldMs = 350;
     this.sensitivity = 0.5;
     this.onUpdate = null;
@@ -172,7 +197,7 @@ export class ChordDetector {
 
   _reset() {
     this.history.length = 0;
-    this.lastStable = null;
+    this.stable.reset();
     this.smooth.fill(0);
     if (this.capture) this.capture.stream.reset();
   }
@@ -189,11 +214,11 @@ export class ChordDetector {
     this.templateOf = new Map(this.templates.map(t => [t.id, t]));
     this.scores = new Array(this.templates.length);
     if (this.history) this.history.length = 0;   // (constructor calls this before history exists)
-    this.lastStable = null;
+    this.stable?.reset();
   }
 
   setSensitivity(v) { this.sensitivity = v; }
-  setMinHold(ms) { this.minHoldMs = ms; }
+  setMinHold(ms) { this.minHoldMs = ms; this.stable.win = ms / 1000 * STABLE_WIN; }
 
   // Every chord id that sounds the same as `id` (same pitch-class set).
   equivalents(id) { return this.templateOf.get(id)?.ids || [id]; }
@@ -213,7 +238,7 @@ export class ChordDetector {
     const clip = clipped / frame.length;
     if (level < RMS_GATE) {
       this.history.length = 0;
-      this.lastStable = null;
+      this.stable.push(t, null, true);
       if (this.run.id) { if (this.onRun) this.onRun({ id: this.run.id, ts0: +this.run.ts0.toFixed(3), dur: +(t - this.run.ts0).toFixed(3) }); this.run = { id: null, ts0: t }; }
       this._emitUpdate(null, 0, level);
       if (this.onFrame) this.onFrame({ act: null, chroma: null, level, peak, clip, scores: null, t, templates: this.templates });
@@ -243,16 +268,8 @@ export class ChordDetector {
     this._emitUpdate(smoothed, confidence, level);
     if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, peak, clip, scores, t, bestId, smoothed, confidence, templates: this.templates });
 
-    const now = performance.now();
-    if (smoothed && smoothed === this.lastStable) {
-      if (now - this.stableSince >= this.minHoldMs) {
-        if (this.onStable) this.onStable(smoothed, confidence, this.equivalents(smoothed));
-        this.stableSince = now + 1e9;
-      }
-    } else {
-      this.lastStable = smoothed;
-      this.stableSince = now;
-    }
+    const fired = this.stable.push(t, smoothed);
+    if (fired && this.onStable) this.onStable(fired, confidence, this.equivalents(fired));
   }
 
   _emitUpdate(chordId, confidence, level) {
