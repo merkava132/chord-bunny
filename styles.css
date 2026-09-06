@@ -367,3 +367,6 @@ footer {
 }
 .profile-row button { font: inherit; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--bg-3); background: var(--bg-2); color: var(--fg); cursor: pointer; }
 .profile-row button:disabled { opacity: .5; cursor: wait; }
+
+#sequence-select { font: inherit; background: var(--bg-2); color: var(--fg); border: 1px solid var(--bg-3); border-radius: 8px; padding: 4px 8px; max-width: 260px; }
+.seq-pos { font-family: var(--mono); color: var(--fg-dim); font-size: 0.85rem; }

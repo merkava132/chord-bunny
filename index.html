@@ -49,7 +49,14 @@
     </div>
 
     <div class="practice-controls">
-      <button id="reroll-btn" title="get a new chord pair">↻ new pair</button>
+      <button id="reroll-btn" title="get a new chord pair / restart the progression">↻ new pair</button>
+      <label class="num">
+        <span>play</span>
+        <select id="sequence-select" title="random related pairs, or follow a progression">
+          <option value="random">random pairs</option>
+        </select>
+      </label>
+      <span class="seq-pos" id="seq-pos" hidden></span>
       <label class="toggle">
         <input type="checkbox" id="autoadvance-cb" checked>
         auto-advance on detection

@@ -15,6 +15,7 @@ const DEFAULTS = {
   minHoldMs: CONFIG.stable.minHoldMs,              // practice matching window base
   micEverEnabled: false,            // sticky: if user enabled mic before, try to auto-prompt
   telemetry: true,                  // log events + record non-silent audio to the local server
+  sequence: 'random',               // 'random' pairs, or a progression id from data/progressions.json
 };
 
 const listeners = [];

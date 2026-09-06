@@ -14,11 +14,12 @@ import * as telemetry from './telemetry.js';
 // ?cfg=detect.lam:0.4,listen.showMs:100 — experiment without editing (logged below)
 const CFG_OVERRIDES = applyOverrides(new URLSearchParams(location.search).get('cfg'));
 
-const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING, USER_PROFILE] = await Promise.all([
+const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING, USER_PROFILE, PROGRESSIONS] = await Promise.all([
   fetch('data/chords.json').then(r => r.json()),
   fetch('data/partials.json').then(r => r.json()).catch(() => null),
   fetch('data/partials_by_string.json').then(r => r.json()).catch(() => null),
   fetch(CONFIG.profile.path).then(r => r.ok ? r.json() : null).catch(() => null),   // personal profile, optional
+  fetch('data/progressions.json').then(r => r.json()).catch(() => []),
 ]);
 
 let audioCtx = null;
@@ -328,9 +329,16 @@ curView.setDiagram(document.getElementById('cur-diagram'));
 listenView = new StringsView(document.getElementById('listen-strings'));
 listenView.setDiagram(document.getElementById('listen-diagram'));
 
+// progression picker (practice controls)
+const seqSelect = document.getElementById('sequence-select');
+for (const p of PROGRESSIONS) { const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; seqSelect.appendChild(o); }
+seqSelect.value = PROGRESSIONS.some(p => p.id === settings.get('sequence')) ? settings.get('sequence') : 'random';
+seqSelect.addEventListener('change', () => { settings.set('sequence', seqSelect.value); practice?.onSequenceChanged(); });
+
 practice = new PracticeMode({
   root: document.getElementById('practice'),
   allChords: ALL_CHORDS,
+  progressions: PROGRESSIONS,
   getEnabled: () => settings.get('enabledChords'),
   getDetector: () => detector,
   onCurrent: (chord) => setVoicing(chord),
@@ -365,6 +373,7 @@ if (params.get('open')) {
     if (wants.some(w => t.startsWith(w))) d.open = true;
   });
 }
+if (params.get('seq')) { settings.set('sequence', params.get('seq')); seqSelect.value = params.get('seq'); practice?.onSequenceChanged(); }
 if (params.get('mode')) setMode(params.get('mode'));
 if (params.get('chord')) {
   const c = ALL_CHORDS.find(x => x.id === params.get('chord'));

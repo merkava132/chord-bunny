@@ -126,6 +126,15 @@ src/
 - Strum-tightness trainer: metronome + the onset detector we already have.
 - Chord audio playback via Tone.js `PluckSynth`.
 
+## Progressions
+
+The "play" selector in practice switches from random related pairs to a
+progression from `data/progressions.json` (My Song's intro riff / verse /
+chorus / tail, I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
+D). The progression's chords are always detection candidates, whether or not
+they are ticked; "new pair" restarts it. Add a song by appending
+`{ id, name, chords: [ids] }` — every id must exist in chords.json.
+
 ## Telemetry & recordings (local only)
 
 `serve.py` (what `./start.sh` runs) is the static server plus a sink for two

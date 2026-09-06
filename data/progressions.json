@@ -1,0 +1,16 @@
+[
+  { "id": "mysong-intro",  "name": "My Song — intro riff (Am · Asus4 · Asus2)", "chords": ["Am", "Asus4", "Asus2", "Am", "Am", "Asus4", "Em"] },
+  { "id": "mysong-verse",  "name": "My Song — verse",  "chords": ["C", "Em", "Am7", "Em", "Am", "G", "F", "Gsus4", "G"] },
+  { "id": "mysong-chorus", "name": "My Song — chorus", "chords": ["G", "F", "Em", "Dsus2", "D", "C", "Dsus2", "G"] },
+  { "id": "mysong-tail",   "name": "My Song — tail (Em7 · Fmaj7 · Cmaj7)", "chords": ["Em7", "Fmaj7", "Cmaj7", "Fmaj7"] },
+  { "id": "pop-C",         "name": "I–V–vi–IV in C (C · G · Am · F)", "chords": ["C", "G", "Am", "F"] },
+  { "id": "pop-G",         "name": "I–V–vi–IV in G (G · D · Em · C)", "chords": ["G", "D", "Em", "C"] },
+  { "id": "pop-G-walk",    "name": "G · D/F# · Em · C (walking bass)", "chords": ["G", "D/F#", "Em", "C"] },
+  { "id": "royal-road",    "name": "Royal road IV–V–iii–vi (F · G · Em · Am)", "chords": ["F", "G", "Em", "Am"] },
+  { "id": "sus-D",         "name": "D · Dsus4 · D · Dsus2", "chords": ["D", "Dsus4", "D", "Dsus2"] },
+  { "id": "sus-A",         "name": "A · Asus4 · A · Asus2", "chords": ["A", "Asus4", "A", "Asus2"] },
+  { "id": "maj7-loop",     "name": "Cmaj7 · Fmaj7 · Am7 · G", "chords": ["Cmaj7", "Fmaj7", "Am7", "G"] },
+  { "id": "ii-V-I",        "name": "ii–V–I in C (Dm7 · G7 · Cmaj7)", "chords": ["Dm7", "G7", "Cmaj7"] },
+  { "id": "canon-D",       "name": "Canon in D (D · A · Bm · F#m · G · D · G · A)", "chords": ["D", "A", "Bm", "F#m", "G", "D", "G", "A"] },
+  { "id": "minor-loop",    "name": "Am · F · C · G", "chords": ["Am", "F", "C", "G"] }
+]

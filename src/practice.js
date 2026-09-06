@@ -15,12 +15,15 @@ import * as telemetry from './telemetry.js';
 import { CONFIG } from './config.js';
 
 export class PracticeMode {
-  constructor({ root, allChords, getEnabled, getDetector, onCurrent = null }) {
+  constructor({ root, allChords, getEnabled, getDetector, onCurrent = null, progressions = [] }) {
     this.root = root;
     this.onCurrent = onCurrent;
     this.allChords = allChords;
     this.getEnabled = getEnabled;
     this.getDetector = getDetector;
+    this.progressions = progressions;   // data/progressions.json; settings.sequence picks one (or 'random')
+    this.seqIndex = 0;                  // position in the selected progression
+    this.seqPosEl = root.querySelector('#seq-pos');
 
     this.curEl       = root.querySelector('.chord-card.current');
     this.nextEl      = root.querySelector('.chord-card.next');
@@ -74,6 +77,7 @@ export class PracticeMode {
   // Enabled set changed (chord picker): re-scope the detector, fix the pair.
   onEnabledChanged() {
     this._syncCandidates();
+    if (this._sequence()) return;   // a progression doesn't depend on the ticked set
     const ids = new Set(this.getEnabled());
     if (!this.current || !ids.has(this.current.id) || !this.next || !ids.has(this.next.id)) this.rerollPair(true);
   }
@@ -83,8 +87,12 @@ export class PracticeMode {
     if (!det) return;
     const ids = new Set(this.getEnabled());
     for (const c of this.allChords) if (c.category === 'basic') ids.add(c.id);
+    for (const c of this._sequence() || []) ids.add(c.id);   // a progression's chords are always in play
     det.setCandidates([...ids]);
   }
+
+  // settings.sequence changed (select): restart with the new mode
+  onSequenceChanged() { this._syncCandidates(); this.rerollPair(true); }
 
   disable() {
     if (this.timerHandle) clearInterval(this.timerHandle);
@@ -126,6 +134,7 @@ export class PracticeMode {
     if (!cur || !ids?.length) return false;
     if (ids.includes(cur.id)) return true;
     const enabled = new Set(this.getEnabled());
+    for (const c of this._sequence() || []) enabled.add(c.id);
     const heard = this.allChords.find(c => c.id === ids[0]);
     return !!heard && !ids.some(id => enabled.has(id))
       && PC_INDEX[heard.root] === PC_INDEX[cur.root] && pcSubset(heard, cur);
@@ -154,7 +163,30 @@ export class PracticeMode {
     setTimeout(() => this.advance(), 240);
   }
 
+  // The selected progression's chord objects, or null for random pairs.
+  _sequence() {
+    const id = settings.get('sequence');
+    const p = id && id !== 'random' ? this.progressions.find(x => x.id === id) : null;
+    if (!p) return null;
+    const byId = new Map(this.allChords.map(c => [c.id, c]));
+    const chords = p.chords.map(c => byId.get(c)).filter(Boolean);
+    return chords.length >= 2 ? chords : null;
+  }
+
+  _seqAt(i) { const seq = this._sequence(); return seq ? seq[((i % seq.length) + seq.length) % seq.length] : null; }
+
   rerollPair(fresh = false) {
+    const seq = this._sequence();
+    if (seq) {   // restart the progression from the top
+      this.seqIndex = 0;
+      this.current = this._seqAt(0);
+      this.next = this._seqAt(1);
+      this._render(this.current, this.next);
+      this._restartTimer();
+      this.hintEl.textContent = settings.get('autoAdvance') ? 'play the progression — it advances when each chord is detected' : 'play the progression — manual advance only';
+      telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', sequence: settings.get('sequence'), index: 0 });
+      return;
+    }
     const enabled = this._enabledList();
     if (enabled.length < 2) {
       this._render(null, null);
@@ -173,9 +205,18 @@ export class PracticeMode {
   }
 
   advance() {
+    const timedOut = settings.get('timerEnabled') && performance.now() >= this.timerEnd;
+    if (this._sequence()) {
+      this.seqIndex++;
+      this.current = this._seqAt(this.seqIndex);
+      this.next = this._seqAt(this.seqIndex + 1);
+      this._render(this.current, this.next);
+      this._restartTimer();
+      telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: timedOut ? 'timer' : 'advance', sequence: settings.get('sequence'), index: this.seqIndex });
+      return;
+    }
     const enabled = this._enabledList();
     if (enabled.length < 2) return;
-    const timedOut = settings.get('timerEnabled') && performance.now() >= this.timerEnd;
     this.current = this.next;
     this.next = pickNext(this.current, enabled);
     this._render(this.current, this.next);
@@ -192,6 +233,11 @@ export class PracticeMode {
     if (this.onCurrent) this.onCurrent(cur);
     this.shownAt = telemetry.now();
     this.lastMissId = null;
+    const seq = this._sequence();
+    if (this.seqPosEl) {
+      this.seqPosEl.hidden = !seq;
+      if (seq) this.seqPosEl.textContent = `${(this.seqIndex % seq.length) + 1} / ${seq.length}`;
+    }
     this.curName.textContent  = cur  ? cur.name  : '—';
     this.nextName.textContent = next ? next.name : '—';
     this.curMeta.textContent  = cur  ? cur.fullName : '';
