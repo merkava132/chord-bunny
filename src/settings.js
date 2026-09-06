@@ -17,6 +17,7 @@ const DEFAULTS = {
   telemetry: true,                  // log events + record non-silent audio to the local server
   micDeviceId: '',                  // '' = browser default input
   debug: false,                     // debug panel (also ?debug=1)
+  sequence: 'random',               // 'random' pairs, or a progression id from data/progressions.json
 };
 
 const listeners = [];
