@@ -220,3 +220,25 @@ fought back. Newest at the bottom.
 - `--listen` on the tools was a no-op in eval_synth for one run because the
   sed pattern anchored on a comment that file didn't have; the "listen all"
   table was identical to "all" — a tell worth remembering.
+
+## 2026-09-06 night — integration
+
+- **The symlink/ignore pitfall bit a second time.** `git add -A` in a
+  worktree picked up `testdata/{hex,notebank,synth}` symlinks because the
+  bench branch's ignore rules had trailing slashes (directories only). The
+  fast-forward into the live checkout then replaced the real directories with
+  self-referential links, and a careless restore step deleted the 380 MB of
+  generated data (all regenerable: `fetch_guitarset.py --hex`, `note_bank`,
+  `synth_chords`, ~5 min). Rules now have no trailing slash and
+  `tests/repo.test.mjs` fails on any tracked symlink under testdata/ — the
+  lesson is mechanised, not remembered.
+- `ln` is aliased `-i` as well as rm/mv/cp on this box.
+- Merging four branches: append-style conflicts in config.js / styles.css /
+  README / FRICTION_LOG resolved by keeping both sides; one merge seam dropped
+  a closing brace in config.js which `node --check` accepted (the object just
+  nested) but the browser rejected — the browser smoke test caught it.
+- browser_test.mjs gave one 0/103 practice run between two 80%+ runs with an
+  identical tree; the timeline looked right, so the comparison itself failed
+  transiently. Not reproduced; treat a single 0% as a flake and rerun.
+- bench.mjs's "all 53 (listen mode)" row ran with practice-mode scoring after
+  the size bonus landed (62.5% vs 74.4%); rows now say which scoring they use.
