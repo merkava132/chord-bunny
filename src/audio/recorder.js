@@ -19,11 +19,14 @@ export class Recorder {
     this.onSegment = onSegment;
     this.enabled = true;
     this.uploaded = 0;
+    this.lastTs = 0;
   }
 
   // chunk: Float32Array of raw samples; tsEnd: stream time at the chunk's end
   push(chunk, tsEnd) {
     if (!this.enabled) return;
+    if (tsEnd < this.lastTs) { this.stop(this.lastTs); this.pre = []; }   // stream clock reset (re-attach)
+    this.lastTs = tsEnd;
     let ss = 0; for (let i = 0; i < chunk.length; i++) ss += chunk[i] * chunk[i];
     const loud = Math.sqrt(ss / chunk.length) >= this.gate;
     const ts0 = tsEnd - chunk.length / this.sr;

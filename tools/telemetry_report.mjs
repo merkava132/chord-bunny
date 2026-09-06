@@ -36,6 +36,15 @@ if (fr.length) {
   console.log('  heard (frame share):', [...heard.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => `${k} ${pct(v, verdict)}`).join('  '));
 }
 
+// --- stable runs (how long each verdict held; practice needs ≥ minHold) ---
+const runs = by('run');
+if (runs.length) {
+  const perId = new Map();
+  for (const r of runs) { const e = perId.get(r.id) || { n: 0, durs: [] }; e.n++; e.durs.push(r.dur); perId.set(r.id, e); }
+  console.log(`\nverdict runs: ${runs.length}, median ${q(runs.map(r => r.dur), .5).toFixed(2)}s, ${pct(runs.filter(r => r.dur >= 0.35).length, runs.length)} held ≥0.35s`);
+  console.log('  ' + [...perId.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 10).map(([id, e]) => `${id} ×${e.n} med ${q(e.durs, .5).toFixed(2)}s max ${Math.max(...e.durs).toFixed(1)}s`).join('  '));
+}
+
 // --- practice ---
 const pairs = by('pair'), matches = by('match'), misses = by('miss');
 if (pairs.length) {

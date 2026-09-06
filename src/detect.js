@@ -134,6 +134,8 @@ export class ChordDetector {
     this.onUpdate = null;
     this.onStable = null;
     this.onFrame = null;           // ({ act, chroma, level, scores }) for visualisation
+    this.onRun = null;             // ({ id, ts0, dur }) each time the smoothed verdict changes (telemetry)
+    this.run = { id: null, ts0: 0 };
     this.running = false;
     this.capture = null;           // { node, stream, dispose }
     this.attached = null;
@@ -212,6 +214,7 @@ export class ChordDetector {
     if (level < RMS_GATE) {
       this.history.length = 0;
       this.lastStable = null;
+      if (this.run.id) { if (this.onRun) this.onRun({ id: this.run.id, ts0: +this.run.ts0.toFixed(3), dur: +(t - this.run.ts0).toFixed(3) }); this.run = { id: null, ts0: t }; }
       this._emitUpdate(null, 0, level);
       if (this.onFrame) this.onFrame({ act: null, chroma: null, level, peak, clip, scores: null, t, templates: this.templates });
       return;
@@ -233,6 +236,10 @@ export class ChordDetector {
     const m = mode(this.history);
     const smoothed = m.count >= Math.ceil(SMOOTHING_LEN * 0.6) ? m.value : null;
 
+    if (smoothed !== this.run.id) {
+      if (this.run.id && this.onRun) this.onRun({ id: this.run.id, ts0: +this.run.ts0.toFixed(3), dur: +(t - this.run.ts0).toFixed(3) });
+      this.run = { id: smoothed, ts0: t };
+    }
     this._emitUpdate(smoothed, confidence, level);
     if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, peak, clip, scores, t, bestId, smoothed, confidence, templates: this.templates });
 

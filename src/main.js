@@ -160,7 +160,14 @@ async function ensureAudioCtx() {
   return audioCtx;
 }
 
+let micStarting = false;
 async function enableMic() {
+  // One click reaches both the mic chip handler and the first-gesture
+  // handler; without this guard two getUserMedia calls raced and built two
+  // detectors on two streams (seen in telemetry as duplicated frames and a
+  // recording with every chunk written twice).
+  if (micStream || micStarting) return;
+  micStarting = true;
   try {
     setMicStatus(null, 'starting…');
     await ensureAudioCtx();
@@ -187,6 +194,8 @@ async function enableMic() {
     console.error(err);
     setMicStatus('error', 'mic blocked');
     telemetry.log('mic', { state: 'error', error: String(err) });
+  } finally {
+    micStarting = false;
   }
 }
 
@@ -224,9 +233,10 @@ function _wireTelemetry(d) {
     telemetry.log('strum', { ts: +ev.t.toFixed(3), strings: ev.strings, direction: ev.direction, spreadMs: +ev.spreadMs.toFixed(1), timed: ev.timed, frets: Array.from(stringTracker.frets || []) });
   };
   const recMax = Number(new URLSearchParams(location.search).get('recmax')) || 60;   // ?recmax=5 for tests
-  recorder = new Recorder({ sampleRate: audioCtx.sampleRate, session: telemetry.session, maxSec: recMax, onSegment: (meta) => telemetry.log('rec', meta) });
-  recorder.enabled = settings.get('telemetry') !== false;
-  d.capture.stream.addTap((chunk, ts) => recorder.push(chunk, ts));
+  const rec = recorder = new Recorder({ sampleRate: audioCtx.sampleRate, session: telemetry.session, maxSec: recMax, onSegment: (meta) => telemetry.log('rec', meta) });
+  rec.enabled = settings.get('telemetry') !== false;
+  d.capture.stream.addTap((chunk, ts) => rec.push(chunk, ts));   // bind this stream to its own recorder
+  d.onRun = (run) => { if (run.dur >= 0.1) telemetry.log('run', run); };
   recStatusEl.hidden = !recorder.enabled;
   setInterval(() => recStatusEl.classList.toggle('on', recorder.recording), 250);
   addEventListener('pagehide', () => recorder.stop());
