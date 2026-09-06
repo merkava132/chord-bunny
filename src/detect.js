@@ -66,8 +66,10 @@ function mode(arr) {
 }
 
 // Templates for a chord list: one per distinct pitch-class set (G and G/B
-// share one and report the first id in list order).
-export function buildTemplates(chords) {
+// share one and report the first id in list order). `sizeBonus` is the
+// closed-world prior toward richer chords (CONFIG.detect.sizeBonus for
+// practice, CONFIG.listen.sizeBonus for listen mode).
+export function buildTemplates(chords, { sizeBonus = CONFIG.detect.sizeBonus } = {}) {
   const byKey = new Map();
   for (const c of chords) {
     const key = pcKey(c);
@@ -75,9 +77,14 @@ export function buildTemplates(chords) {
     if (t) { t.ids.push(c.id); continue; }
     const pcs = pitchClasses(c);
     let mask = 0; for (const pc of pcs) mask |= 1 << pc;
-    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, prior: CONFIG.detect.prior[c.category] || 0, perfect: Math.log(1 / pcs.length + EPS()) });
+    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, prior: CONFIG.detect.prior[c.category] || 0, bonus: sizeBonus * Math.log(pcs.length), perfect: perfectScore(pcs.length) });
   }
   return [...byKey.values()];
+}
+
+// Score of a template whose tones all sit exactly at their expected share 1/|T|
+export function perfectScore(n) {
+  return CONFIG.detect.beta > 0 ? 0 : Math.log(1 / n + EPS());
 }
 
 // Score every template against a chroma vector (sums to 1). Geometric mean of
@@ -90,13 +97,15 @@ export function buildTemplates(chords) {
 // verdict look uncertain once the richer chords are candidates.
 export function scoreTemplates(ch, templates, out = null) {
   const scores = out || new Array(templates.length);
-  const eps = EPS(), lam = CONFIG.detect.lam;
+  const eps = EPS(), { lam, beta } = CONFIG.detect;
   let best = -1;
   for (let i = 0; i < templates.length; i++) {
-    const { pcs, prior } = templates[i];
+    const { pcs, prior, bonus } = templates[i];
+    const n = pcs.length;
     let s = 0, inside = 0;
-    for (const pc of pcs) { s += Math.log(ch[pc] + eps); inside += ch[pc]; }
-    s = s / pcs.length - lam * (1 - inside) - prior;
+    if (beta > 0) for (const pc of pcs) { s += (Math.pow(ch[pc] * n, beta) - 1) / beta; inside += ch[pc]; }
+    else for (const pc of pcs) { s += Math.log(ch[pc] + eps); inside += ch[pc]; }
+    s = s / n + bonus - lam * (1 - inside) - prior;
     scores[i] = s;
     if (best < 0 || s > scores[best]) best = i;
   }
@@ -120,7 +129,9 @@ export function confidenceOf({ scores, best, second }, templates) {
   const c = CONFIG.confidence, t = templates[best];
   const bestScore = scores[best] + t.prior;          // don't dock a sus chord for its own prior
   const secondScore = second >= 0 ? scores[second] : -Infinity;
-  const fit = Math.max(0, Math.min(1, (bestScore - c.poor) / (t.perfect - c.poor)));
+  // fit is about the chroma, so the size bonus (an argmax prior) is taken out;
+  // the margin is the competition as it was actually scored
+  const fit = Math.max(0, Math.min(1, (bestScore - t.bonus - c.poor) / (t.perfect - c.poor)));
   const margin = Math.max(0, Math.min(1, (bestScore - secondScore) / c.margin));
   return c.fitWeight * fit + (1 - c.fitWeight) * margin;
 }
@@ -190,9 +201,9 @@ export class ChordDetector {
   // Asus2/Esus4, Dsus2/Asus4, G/G/B are the same notes to a chroma detector).
   // Fewer candidates → fewer confusions: on GuitarSet the 9 basic chords alone
   // score 87% vs 73% for all 53.
-  setCandidates(ids) {
+  setCandidates(ids, opts = {}) {
     const want = ids ? new Set(ids) : null;
-    this.templates = buildTemplates(want ? this.chords.filter(c => want.has(c.id)) : this.chords);
+    this.templates = buildTemplates(want ? this.chords.filter(c => want.has(c.id)) : this.chords, opts);
     this.templateOf = new Map(this.templates.map(t => [t.id, t]));
     this.scores = new Array(this.templates.length);
     if (this.history) this.history.length = 0;   // (constructor calls this before history exists)

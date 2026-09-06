@@ -7,3 +7,7 @@ testdata/audio
 .DS_Store
 telemetry/
 recordings/
+testdata/hex/
+testdata/notebank/
+testdata/synth/
+__pycache__/

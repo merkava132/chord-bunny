@@ -22,9 +22,25 @@ export const CONFIG = {
     // No effect when only triads compete.
     lam: 0.5,
     // Per-category prior subtracted from the score. Sus chords tie with majors
-    // whose 3rd is weak (G with a single B, A leaking from D's 3rd partial);
-    // 0.15 on sus: basic 79→87% with basic+sus candidates, sus recall unchanged.
-    prior: { sus: 0.15 },
+    // whose 3rd is weak (G with a single B, A leaking from D's 3rd partial).
+    // 0.15 gave basic 79→87% with basic+sus candidates on GuitarSet; 0.10
+    // keeps 86% there and lifts sus fires on the real-note bench 65→70%
+    // (my-song set) and 57→72% (all 53). docs/BENCH.md.
+    prior: { sus: 0.10 },
+    // Size bonus: + sizeBonus·log|T| per template. The geometric mean compares
+    // each tone with an absolute floor, so a 4-note template needs its 7th as
+    // loud as the average tone to beat its triad; a full likelihood would
+    // compare with the expected share 1/|T| (sizeBonus 1) but then triads
+    // collapse (GuitarSet all-53 3%). 0.25 is the closed-world setting used
+    // in practice mode, where the user declared which chords are in play:
+    // real-note bench, basic+7ths candidates, fires within 1 s — basic 86→79%,
+    // maj7 40→71%, min7 41→63%, 7th 65→77%; my-song set maj7 44→69%,
+    // min7 25→56%, basics 88→85%. No effect when only triads compete.
+    // Listen mode (open world) uses CONFIG.listen.sizeBonus.
+    sizeBonus: 0.25,
+    // beta > 0 switches the per-tone score to the power mean ((ch·|T|)^beta−1)/beta
+    // (0.25 ≈ half-way to cosine); measured worse than sizeBonus, kept for experiments
+    beta: 0,
   },
   confidence: {
     // conf = fitWeight·fit + (1−fitWeight)·margin; margin = (best − runner-up)/margin,
@@ -54,6 +70,10 @@ export const CONFIG = {
     // 8.6 with none, 80% right when shown (tools/eval_listen.mjs).
     showMs: 160,
     gapMs: 400,
+    // open world: the simpler chord is the better guess. With 0.25 the
+    // GuitarSet all-53 benchmark drops 75.6→62.5%; with 0 it is 74.4%
+    // (sus prior 0.10), real-note bench maj7 fires 38%, min7 41%.
+    sizeBonus: 0,
   },
   meter: {
     // practice meter: threshold at the midpoint, threshold + span fills it

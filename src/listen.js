@@ -58,7 +58,7 @@ export class ListenMode {
   _wireDetector() {
     const det = this.getDetector();
     if (!det) return;
-    det.setCandidates(null);          // free listening: every chord is a candidate
+    det.setCandidates(null, { sizeBonus: CONFIG.listen.sizeBonus });   // free listening: every chord, open-world prior
     const idToChord = new Map(this.allChords.map(c => [c.id, c]));
     det.onUpdate = (id, conf, level, ids) => {
       const now = performance.now();
