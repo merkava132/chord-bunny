@@ -64,10 +64,17 @@ Benchmarked against [GuitarSet](https://github.com/marl/GuitarSet) (CC-BY 4.0) r
 | old chroma+cosine, 21 chords | 71.3% |
 | v2 scorer, 21 chords (previous build) | 81.6% |
 | **now, candidates = the basic nine** (practice with "basic only") | **87.1%** |
-| now, candidates = "my song" preset + basic | 83.8% |
-| now, all 53 candidates (listen mode) | 75.6% |
+| now, candidates = "my song" preset + basic | 77.6% |
+| now, all 53 candidates (listen mode, open-world scoring) | 74.4% |
 
-Extended chords, all 36 comping takes, performed labels, candidates = basic + maj7 + min7 + 7th: 7th chords 41%, maj7 27%, min7 28%, plain triads 83% (without the unexplained-mass penalty: 23% / 10% / 15% / 88%). GuitarSet's 7ths are mostly jazz voicings up the neck, not the open shapes in this app, so treat those as lower bounds. GuitarSet contains only ~10 s of sus chords in total (brief ornaments), so the 15% sus recall is not a measurement of a held Dsus4.
+The full, regenerable table is `docs/BENCH.md` (`npm run bench`), including the
+real-note synthetic bench for all 53 open-position voicings. Extended chords,
+all 36 comping takes, performed labels, candidates = basic + maj7 + min7 +
+7th: 7th chords 51%, maj7 37%, min7 42%, plain triads 71% (before the size
+bonus: 41 / 27 / 28 / 83; before the unexplained-mass penalty: 23 / 10 / 15 /
+88). The size bonus is a deliberate trade: when rich chords are ticked, they
+are recognised far more often and plain triads a little less; with only the
+basic nine ticked nothing changes. GuitarSet's 7ths are mostly jazz voicings up the neck, not the open shapes in this app, so treat those as lower bounds. GuitarSet contains only ~10 s of sus chords in total (brief ornaments), so the 15% sus recall is not a measurement of a held Dsus4.
 
 End-to-end in headless Chrome (a WAV as the fake mic, `tools/browser_test.mjs`, share of UI samples whose "heard" equals the lead-sheet chord): practice mode with the default five chords ticked, 00_Rock3 81% / 02_SS3 46% (previous 21-chord build: 79% / 46%); listen mode with all 53 candidates, 71% / 40% (previous build: 82% / 46%). Listen mode pays for its 53 candidates in "—" frames and the odd G→Gmaj7; practice mode does not.
 

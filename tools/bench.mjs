@@ -20,9 +20,10 @@ const tool = async (name, extra) => {
 };
 
 const MYSONG = 'basic,Asus4,Asus2,Am7,Gsus4,Dsus2,Fsus4,Fmaj7,Cmaj7,Em7';
-const SETS = [
+const SETS = [   // [label, --chords, extra flags]
   ['basic (practice default)', 'basic'],
-  ['all 53 (listen mode)', null],
+  ['all 53 (listen mode, open-world scoring)', null, ['--listen']],
+  ['all 53 (practice scoring, everything ticked)', null],
   ['basic + sus + maj7 + min7 + 7th', 'basic,sus,maj7,minor7,seventh'],
   ['"my song" preset + basic', MYSONG],
 ];
@@ -41,13 +42,13 @@ if (!hasAudio) {
   lines.push('> testdata/audio has no WAVs — GuitarSet sections skipped. Run `python3 testdata/fetch_guitarset.py` (≈3 min) and re-run.', '');
 } else {
   const jobs = {
-    chords: Promise.all(SETS.map(([, c]) => tool('eval_chords.mjs', c ? [`--chords=${c}`] : []))),
+    chords: Promise.all(SETS.map(([, c, extra = []]) => tool('eval_chords.mjs', [...(c ? [`--chords=${c}`] : []), ...extra]))),
     families: tool('eval_chords.mjs', ['--subset=all', '--gt=performed', '--chords=basic,maj7,minor7,seventh', '--dump=app']),
-    familiesAll: tool('eval_chords.mjs', ['--subset=all', '--gt=performed', '--dump=app']),
+    familiesAll: tool('eval_chords.mjs', ['--subset=all', '--gt=performed', '--dump=app', '--listen']),
     hold: tool('eval_hold.mjs', ['--minseg=2']),
     listen: tool('eval_listen.mjs', []),
     calBasic: tool('calibrate.mjs', ['--chords=basic']),
-    calAll: tool('calibrate.mjs', []),
+    calAll: tool('calibrate.mjs', ['--listen']),
   };
   const R = Object.fromEntries(await Promise.all(Object.entries(jobs).map(async ([k, p]) => [k, await p])));
   const pct = (re, s) => { const m = re.exec(s); return m ? m[1] + '%' : '?'; };
