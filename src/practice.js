@@ -13,6 +13,7 @@ import { pickNext } from './theory.js';
 import * as settings from './settings.js';
 import * as telemetry from './telemetry.js';
 import { CONFIG } from './config.js';
+import { Coach } from './coach.js';
 
 export class PracticeMode {
   constructor({ root, allChords, getEnabled, getDetector, onCurrent = null }) {
@@ -33,6 +34,7 @@ export class PracticeMode {
     this.heardEl     = root.querySelector('#heard-chord');
     this.confFill    = root.querySelector('#conf-fill');
     this.hintEl      = root.querySelector('#detection-hint');
+    this.coachEl     = root.querySelector('#coach-hint');
     this.timerEl     = root.querySelector('#timer-display');
 
     this.current = null;
@@ -62,13 +64,29 @@ export class PracticeMode {
 
     this.timerHandle = null;
     this.timerEnd = 0;
+
+    // coach: one hint at a time about the chord you're holding (src/coach.js)
+    this.coach = new Coach({
+      chords: allChords,
+      onHint: (h, t) => {
+        this.coachEl.hidden = !h;
+        this.coachEl.textContent = h ? h.text : '';
+        if (h) telemetry.log('hint', { ts: this._ts(), target: this.current?.id, kind: h.kind, text: h.text });
+      },
+    });
+    this.coachTimer = null;
   }
+
+  // fed by main.js from the detector / string tracker (every frame, every strum)
+  observeFrame(f) { if (this.coachTimer) this.coach.pushFrame(f, telemetry.now()); }
+  observeStrum(ev) { if (this.coachTimer) this.coach.pushStrum(ev, telemetry.now()); }
 
   enable() {
     this.rerollPair(/*fresh*/ true);
     this._restartTimer();
     this._wireDetector();
     this._showDiagramsToggle();
+    if (!this.coachTimer) this.coachTimer = setInterval(() => this.coach.tick(telemetry.now()), 250);
   }
 
   // Enabled set changed (chord picker): re-scope the detector, fix the pair.
@@ -89,6 +107,9 @@ export class PracticeMode {
   disable() {
     if (this.timerHandle) clearInterval(this.timerHandle);
     this.timerHandle = null;
+    if (this.coachTimer) clearInterval(this.coachTimer);
+    this.coachTimer = null;
+    this.coach.setTarget(null, telemetry.now());
     this.timerEl.hidden = true;
     const det = this.getDetector();
     if (det) { det.onUpdate = null; det.onStable = null; }
@@ -144,6 +165,7 @@ export class PracticeMode {
     if (!this._isMatch(ids)) return;
     const auto = !!settings.get('autoAdvance');
     telemetry.log('match', { ts: this._ts(), target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1), advanced: auto });
+    this.coach.setMatched(telemetry.now());
     if (auto) this._matched();
   }
 
@@ -192,6 +214,7 @@ export class PracticeMode {
     if (this.onCurrent) this.onCurrent(cur);
     this.shownAt = telemetry.now();
     this.lastMissId = null;
+    this.coach.setTarget(cur, this.shownAt);
     this.curName.textContent  = cur  ? cur.name  : '—';
     this.nextName.textContent = next ? next.name : '—';
     this.curMeta.textContent  = cur  ? cur.fullName : '';

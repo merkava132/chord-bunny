@@ -158,6 +158,51 @@ settings.onChange((key, value) => {
 telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, chords: ALL_CHORDS.length, settings: settings.all(), config: CONFIG, overrides: CFG_OVERRIDES,
   profile: USER_PROFILE ? { learnedAt: USER_PROFILE.learnedAt, chords: Object.keys(USER_PROFILE.chords || {}) } : null });
 
+// ---------- debug panel (?debug=1 or the toggle) ----------
+const debugEl = document.getElementById('debug');
+const debugCb = document.getElementById('debug-cb');
+const dbg = Object.fromEntries(['chroma', 'level', 'peak', 'clip', 'verdict', 'best', 'conf-fill', 'conf-thr', 'conf', 'stable', 'top', 'cands', 'session', 'perf', 'config'].map(k => [k, document.getElementById('dbg-' + k)]));
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+dbg.chroma.innerHTML = NOTE_NAMES.map(n => `<div class="pc"><div class="f"></div><div class="n">${n}</div></div>`).join('');
+const dbgPcs = [...dbg.chroma.querySelectorAll('.pc')];
+let debugFrame = null, debugTimer = null;
+function setDebug(on) {
+  debugEl.hidden = !on;
+  debugCb.checked = on;
+  if (debugTimer) { clearInterval(debugTimer); debugTimer = null; }
+  if (!on) return;
+  dbg.session.textContent = telemetry.session;
+  dbg.config.textContent = JSON.stringify(CONFIG, null, 1);
+  debugTimer = setInterval(renderDebug, 1000 / CONFIG.debug.hz);
+}
+function renderDebug() {
+  const f = debugFrame, d = detector;
+  if (!f || !d) return;
+  const tpl = d.templates, target = practice?.current;
+  const targetPcs = new Set(target && settings.get('mode') === 'practice' ? target.notes.map(n => NOTE_NAMES.indexOf(n.replace('Db', 'C#').replace('Eb', 'D#').replace('Gb', 'F#').replace('Ab', 'G#').replace('Bb', 'A#'))) : []);
+  for (let i = 0; i < 12; i++) {
+    const v = f.chroma ? f.chroma[i] : 0;
+    dbgPcs[i].querySelector('.f').style.height = `${Math.round(Math.min(1, v * 2) * 100)}%`;   // 0.5 fills
+    dbgPcs[i].classList.toggle('in', targetPcs.has(i));
+  }
+  dbg.level.textContent = f.level.toFixed(3); dbg.peak.textContent = f.peak.toFixed(2); dbg.clip.textContent = `${(f.clip * 100).toFixed(1)}%`;
+  dbg.verdict.textContent = f.smoothed || '—'; dbg.best.textContent = f.bestId || '—';
+  const conf = f.confidence || 0, thr = d.sensitivity;
+  dbg['conf-fill'].style.width = `${Math.round(conf * 100)}%`; dbg['conf-thr'].style.left = `${Math.round(thr * 100)}%`;
+  dbg.conf.textContent = `${conf.toFixed(2)} / ${thr.toFixed(2)}`;
+  const q = d.stable?.q || [], id = f.smoothed;
+  let n = 0; for (const [, x] of q) if (x === id) n++;
+  dbg.stable.textContent = q.length ? `${id || '—'} ${n}/${q.length} (${Math.round(100 * n / q.length)}%, need ${Math.round(100 * CONFIG.stable.frac)}%${d.stable.lastFired ? `, fired ${d.stable.lastFired}` : ''})` : '—';
+  if (f.scores) {
+    const order = f.scores.map((sc, i) => i).sort((a, b) => f.scores[b] - f.scores[a]).slice(0, 3);
+    dbg.top.textContent = order.map(i => `${tpl[i].id} ${f.scores[i].toFixed(2)}`).join('  ');
+  } else dbg.top.textContent = 'silence';
+  dbg.cands.textContent = String(tpl.length);
+  dbg.perf.textContent = `detector ${(detector?.perfMs || 0).toFixed(1)} ms/frame of ${(CONFIG.detect.hop / (audioCtx?.sampleRate || 48000) * 1000).toFixed(0)}`;
+}
+debugCb.addEventListener('change', () => { settings.set('debug', debugCb.checked); setDebug(debugCb.checked); });
+setDebug(!!settings.get('debug') || new URLSearchParams(location.search).get('debug') === '1');
+
 // ---------- mode tabs ----------
 function setMode(mode) {
   settings.set('mode', mode);
@@ -189,6 +234,76 @@ async function ensureAudioCtx() {
   return audioCtx;
 }
 
+// ---------- input device / level monitoring ----------
+const micDeviceEl = document.getElementById('mic-device');
+const micWarnEl   = document.getElementById('mic-warn');
+const micLevelBar = document.querySelector('#mic-level .bar');
+const micClipEl   = document.getElementById('mic-clip');
+const LOOPBACK_RE = new RegExp(CONFIG.input.loopbackPattern, 'i');
+
+async function openMicStream(deviceId) {
+  const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  try { return await navigator.mediaDevices.getUserMedia({ audio }); }
+  catch (err) {
+    if (!deviceId) throw err;
+    console.warn('saved input device unavailable, falling back to default', err);
+    settings.set('micDeviceId', '');
+    delete audio.deviceId;
+    return navigator.mediaDevices.getUserMedia({ audio });
+  }
+}
+
+function currentMicLabel() { return micStream?.getAudioTracks()[0]?.label || ''; }
+
+// device list needs a granted permission for labels; refreshed after mic-on
+async function refreshDeviceList() {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    const cur = micStream?.getAudioTracks()[0]?.getSettings().deviceId || settings.get('micDeviceId') || '';
+    micDeviceEl.innerHTML = '';
+    for (const d of devs) {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || `input ${micDeviceEl.length + 1}`;
+      if (d.deviceId === cur) o.selected = true;
+      micDeviceEl.appendChild(o);
+    }
+    micDeviceEl.hidden = devs.length < 2;
+  } catch (err) { console.warn('enumerateDevices failed', err); }
+  micWarnEl.hidden = !LOOPBACK_RE.test(currentMicLabel());
+}
+navigator.mediaDevices?.addEventListener?.('devicechange', () => { if (micStream) refreshDeviceList(); });
+
+micDeviceEl.addEventListener('change', async () => {
+  const id = micDeviceEl.value;
+  settings.set('micDeviceId', id);
+  if (!micStream) return;
+  try {
+    const next = await openMicStream(id);
+    for (const t of micStream.getTracks()) t.stop();
+    micStream = next;
+    micSource = audioCtx.createMediaStreamSource(micStream);
+    _attachMicToDetector();
+    telemetry.log('mic', { state: 'switched', label: currentMicLabel() });
+  } catch (err) {
+    console.error(err);
+    setMicStatus('error', 'input failed');
+    telemetry.log('mic', { state: 'error', error: String(err) });
+  }
+  refreshDeviceList();
+});
+
+// header level meter: peak with a slow fall, clip dot held ~1 s
+let meterPeak = 0, clipUntil = 0;
+function updateInputMeter(f) {
+  meterPeak = Math.max(f.peak, meterPeak * CONFIG.input.meterDecay);
+  const pct = Math.min(100, Math.round(Math.sqrt(meterPeak) * 100));   // sqrt: 0.01 → 10%, 0.25 → 50%, 1 → 100%
+  micLevelBar.style.width = `${pct}%`;
+  micLevelBar.classList.toggle('hot', meterPeak > 0.5);
+  if (f.clip > 0) clipUntil = performance.now() + 1000;
+  micClipEl.classList.toggle('on', performance.now() < clipUntil);
+}
+
 let micStarting = false;
 async function enableMic() {
   // One click reaches both the mic chip handler and the first-gesture
@@ -200,21 +315,15 @@ async function enableMic() {
   try {
     setMicStatus(null, 'starting…');
     await ensureAudioCtx();
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 1,
-      }
-    });
+    micStream = await openMicStream(settings.get('micDeviceId'));
     micSource = audioCtx.createMediaStreamSource(micStream);
     if (!detector) detector = await makeDetector();
     _attachMicToDetector();
     detector.start({});
     setMicStatus('on', 'mic on');
     settings.set('micEverEnabled', true);
-    telemetry.log('mic', { state: 'on', sampleRate: audioCtx.sampleRate, label: micStream.getAudioTracks()[0]?.label || '' });
+    telemetry.log('mic', { state: 'on', sampleRate: audioCtx.sampleRate, label: currentMicLabel() });
+    refreshDeviceList();
 
     // re-wire active mode now that detector is live
     if (settings.get('mode') === 'practice') practice?.enable();
@@ -250,8 +359,11 @@ function _wireTelemetry(d) {
       telemetry.log('perf', { msPerFrame: +d.perfMs.toFixed(2), maxMs: +d.perfMax.toFixed(1), budgetMs: +(CONFIG.detect.hop / audioCtx.sampleRate * 1000).toFixed(1) });
       d.perfMax = 0;
     }
+    debugFrame = f;
     const playing = f.scores !== null;
     if (playing && f.confidence >= CONFIG.recorder.musicConf && recorder) recorder.noteMusic(f.t);
+    practice?.observeFrame(f);
+    if (n % 3 === 0) updateInputMeter(f);
     if (playing ? n % CONFIG.telemetry.frameEvery !== 0 : n % CONFIG.telemetry.silentEvery !== 0) return;
     const ev = { ts: +f.t.toFixed(3), level: +f.level.toFixed(4), peak: +f.peak.toFixed(3), clip: +f.clip.toFixed(3) };
     if (playing) {
@@ -264,6 +376,7 @@ function _wireTelemetry(d) {
   };
   if (stringTracker) stringTracker.onAnyEvent = (ev) => {
     if (ev.type !== 'strum') return;
+    practice?.observeStrum(ev);
     telemetry.log('strum', { ts: +ev.t.toFixed(3), strings: ev.strings, direction: ev.direction, spreadMs: +ev.spreadMs.toFixed(1), timed: ev.timed, frets: Array.from(stringTracker.frets || []) });
   };
   const recMax = Number(new URLSearchParams(location.search).get('recmax')) || 60;   // ?recmax=5 for tests

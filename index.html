@@ -18,10 +18,13 @@
   <div class="rec-status" id="rec-status" title="recording non-silent audio to this machine for debugging" hidden>
     <span class="dot" aria-hidden="true"></span>rec
   </div>
-  <div class="mic-status" id="mic-status" title="microphone">
+  <div class="mic-status" id="mic-status" title="microphone — click to enable">
     <span class="dot" aria-hidden="true"></span>
     <span class="label">mic off</span>
+    <span class="level" id="mic-level" title="input level (peak)"><span class="bar"></span><span class="clip" id="mic-clip" title="clipping"></span></span>
   </div>
+  <select id="mic-device" class="mic-device" title="input device" hidden></select>
+  <span class="mic-warn" id="mic-warn" hidden title="the selected input is a playback monitor / loopback, not a microphone">not a mic?</span>
 </header>
 
 <main>
@@ -47,6 +50,7 @@
       <div class="meter"><div class="fill" id="conf-fill"></div></div>
       <div class="hint" id="detection-hint">click anywhere to enable mic</div>
     </div>
+    <div class="coach" id="coach-hint" hidden></div>
 
     <div class="practice-controls">
       <button id="reroll-btn" title="get a new chord pair">↻ new pair</button>
@@ -126,6 +130,10 @@
         <span id="profile-status">personal profile: none yet</span>
         <button id="profile-learn-btn" title="learn what your chords sound like from your recorded practice">learn from my recordings</button>
       </div>
+      <label class="toggle">
+        <input type="checkbox" id="debug-cb">
+        debug panel (live chroma, scores, confidence — also <code>?debug=1</code>)
+      </label>
     </details>
     <details>
       <summary>how it listens</summary>
@@ -141,6 +149,12 @@
         Sus chords get a small handicap because a major chord with a weak third sounds like
         one. Next chords are chosen so the transition is one you'd meet in a song: same key,
         or same root.</p>
+        <p><b>The coach</b> speaks only while a chord refuses to match: it compares what it
+        hears with the shape you're meant to hold and names the most likely culprit — a muted
+        string you keep hitting, an open string ringing where a finger should be, a top string
+        the strum never reaches, a clipping or very quiet input. One hint at a time, from
+        evidence in the last few seconds; when two strings could explain the same stray note it
+        names both.</p>
         <p>For the strings, a second analysis runs every 6 ms with one template per string of
         the shape you're holding. A strum is detected from the spectral flux; each string's
         onset is timed from the steepest rise of its activation, which gives the direction
@@ -152,6 +166,21 @@
         better than about ±8 ms per string.</p>
       </div>
     </details>
+  </section>
+  <!-- DEBUG PANEL: what the detector sees, for tuning -->
+  <section class="debug" id="debug" hidden>
+    <div class="debug-row">
+      <div class="debug-chroma" id="dbg-chroma"></div>
+      <div class="debug-stats">
+        <div>level <b id="dbg-level">–</b> · peak <b id="dbg-peak">–</b> · clip <b id="dbg-clip">–</b></div>
+        <div>verdict <b id="dbg-verdict">–</b> · best <b id="dbg-best">–</b></div>
+        <div class="debug-conf"><span>confidence</span><span class="track"><span class="fill" id="dbg-conf-fill"></span><span class="thr" id="dbg-conf-thr"></span></span><b id="dbg-conf">–</b></div>
+        <div>stable window <b id="dbg-stable">–</b></div>
+        <div>top <span id="dbg-top" class="mono">–</span></div>
+        <div class="dim">candidates <b id="dbg-cands">–</b> · session <span id="dbg-session" class="mono">–</span> · <span id="dbg-perf">–</span></div>
+      </div>
+    </div>
+    <details><summary>effective config</summary><pre id="dbg-config" class="mono"></pre></details>
   </section>
 </main>
 

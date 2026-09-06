@@ -168,3 +168,26 @@ detection panel → `POST /api/profile/learn`) or by hand:
 The tool prints a leave-one-interval-out evaluation first (first session, 77
 intervals: settled-frame accuracy 56→59%, wrong fires 18→14, median delay
 2.21→2.05 s), so you can see whether more data helped.
+## Coach, input monitoring, debug panel
+
+- **Coach** (`src/coach.js`): while a practice target stays unmatched for a
+  few seconds, one hint at a time derived from the last 3 s of detector frames
+  and strum events. Rules, in priority order (each a few lines in `RULES`):
+  `clipping`, `quiet`, a silent `other-chord` guard (no string hints while the
+  verdict is plainly a different chord, unless that chord is the target plus
+  the stray note — G + open E = Em), `muted-hit` (strums keep hitting a string
+  that is muted in the shape), `open-string` (a strong non-chord pitch class
+  that is an open string's note; names the finger when one string is
+  responsible, both strings when two could be), `missing-string` (a chord tone
+  that lives on one string in the shape is neither struck nor heard). Knobs in
+  `CONFIG.coach`. Hints are logged as telemetry `hint` events.
+  `node tools/coach_replay.mjs telemetry/<session>.jsonl` replays a session
+  and prints the hints it would have given.
+- **Input monitoring** in the header: level meter with a clip dot on the mic
+  chip, an input-device picker (saved; switching re-attaches the detector),
+  and a "not a mic?" warning when the selected device label looks like a
+  playback monitor / loopback (`CONFIG.input.loopbackPattern`).
+- **Debug panel** (`?debug=1` or the toggle under *detection*): live chroma
+  (target notes in green), verdict / best, confidence vs threshold, the
+  stable-window fill practice matching waits for, top-3 template scores,
+  candidate count, detector cost per frame, session id, effective config.
