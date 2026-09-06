@@ -142,3 +142,24 @@ fought back. Newest at the bottom.
 - `run` telemetry events (verdict run lengths) are the right lens for this;
   5 Hz frame samples can't see 350 ms holds.
 - Sanity check for recordings: `ts1 - ts0` must equal `bytes / (2 · sr)`.
+
+## 2026-09-06 — tests / bench / docs pass
+
+- `node --test tests/` fails on Node 22 ("Cannot find module …/tests"): a bare
+  directory is not a pattern; `node --test tests/*.test.mjs` works.
+- `Recorder` marked a segment `continues: true` when the tail and maxLen
+  conditions coincided, then opened an empty follow-on segment that was
+  later dropped (no chord-like frame). Tail now takes priority; a
+  `continues` flag can still dangle when the follow-on held only the tail —
+  consumers must check `seg+1` exists with `ts0 == ts1` before joining.
+- `session_labels.mjs` documented `--rec-dir DIR` but its parser only takes
+  `--rec-dir=DIR` (a bare value becomes `true` and `path.join` throws).
+  Comment fixed; the parser is shared across tools and worth unifying.
+- The "old chroma detector" column in eval_chords always scores all 53
+  chords regardless of `--chords=` (it builds from APP_CHORDS) — labelled as
+  such in BENCH.md rather than changed.
+- Tests write a fixture session into the repo's `telemetry/` because
+  session_labels resolves that directory relative to itself; they clean up.
+  A `--telemetry-dir` flag would be cleaner.
+- bench.mjs runs the seven eval processes in parallel: 36 s wall on the
+  7800X3D instead of ~3 min.

@@ -52,7 +52,7 @@ if (!hasAudio) {
   const R = Object.fromEntries(await Promise.all(Object.entries(jobs).map(async ([k, p]) => [k, await p])));
   const pct = (re, s) => { const m = re.exec(s); return m ? m[1] + '%' : '?'; };
 
-  lines.push('## Chord accuracy by candidate set (open subset, instructed labels)', '', '| candidates | frame accuracy | old chroma detector |', '|---|---|---|');
+  lines.push('## Chord accuracy by candidate set (open subset, instructed labels)', '', '| candidates | frame accuracy | old chroma+cosine detector (always all 53) |', '|---|---|---|');
   SETS.forEach(([label], i) => { const o = R.chords[i].out; lines.push(`| ${label} | ${pct(/\bapp=([\d.]+)%/, o)} | ${pct(/\bold=([\d.]+)%/, o)} |`); });
   lines.push('', 'Every extra candidate is a chance to be wrong: practice mode scores only the ticked chords plus the basic nine; listen mode scores all 53.', '');
 
