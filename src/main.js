@@ -90,9 +90,10 @@ document.querySelectorAll('.picker-actions button').forEach(btn => {
 });
 
 // ---------- detection settings sliders ----------
-// Calibrated on GuitarSet (tools/calibrate.mjs): confidence ≥0.35 → 77% of
-// chord frames get a verdict, 91% of those verdicts are right. Slider 0–100
-// maps to 0.10–0.55.
+// Calibrated on GuitarSet (tools/calibrate.mjs, open subset): confidence
+// ≥0.35 (slider default 55) → with the basic nine as candidates 79% of chord
+// frames get a verdict and 94% of those are right; with all 53 candidates
+// (listen mode) 78% / 84%. Slider 0–100 maps to 0.10–0.55.
 const sensFromSlider = (v) => 0.10 + (v / 100) * 0.45;
 const sensSlider = document.getElementById('sensitivity');
 const minHoldInput = document.getElementById('min-hold');
@@ -261,7 +262,15 @@ if (!micStream) hintEl.textContent = 'click the mic chip (top right) or anywhere
 //   ?autostart=1        enable mic without a gesture (headless testing with a fake mic)
 //   ?mode=listen        force a mode
 //   ?chord=G            force the practice target chord
+//   ?open=chord,detect  open the settings panels whose summary starts with these
 const params = new URLSearchParams(location.search);
+if (params.get('open')) {
+  const wants = params.get('open').split(',').map(s => s.trim().toLowerCase());
+  document.querySelectorAll('#settings details').forEach(d => {
+    const t = d.querySelector('summary')?.textContent.trim().toLowerCase() || '';
+    if (wants.some(w => t.startsWith(w))) d.open = true;
+  });
+}
 if (params.get('mode')) setMode(params.get('mode'));
 if (params.get('chord')) {
   const c = ALL_CHORDS.find(x => x.id === params.get('chord'));

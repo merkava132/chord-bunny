@@ -103,8 +103,11 @@ export function scoreTemplates(ch, templates, out = null) {
 }
 
 // Confidence in the winner: half how well the chroma fits it, half how far
-// the nearest non-nested rival is behind. Tunables shared with tools/calibrate.mjs.
-export const CONF = { margin: 0.5, fitWeight: 0.5 };
+// the nearest non-nested rival is behind. Tunables shared with
+// tools/calibrate.mjs. margin 0.3 (was 0.5 with 21 chords): at the default
+// threshold 0.35 the basic set gets a verdict on 79% of chord frames at 94%
+// precision (was 69% / 95%), all 53 candidates 78% / 84% (was 68% / 86%).
+export const CONF = { margin: 0.3, fitWeight: 0.5 };
 export function confidenceOf({ scores, best, second }, templates) {
   const t = templates[best];
   const bestScore = scores[best] + t.prior;          // don't dock a sus chord for its own prior

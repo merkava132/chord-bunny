@@ -1,5 +1,5 @@
 node_modules/
-testdata/audio/
+testdata/audio
 *.wav
 *.mp3
 *.flac
