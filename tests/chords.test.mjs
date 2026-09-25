@@ -6,7 +6,7 @@ import { TUNING, PC_NAMES } from '../src/dsp/analyzer.js';
 import { PC_INDEX } from '../src/detect.js';
 
 const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));
-const CATEGORIES = new Set(['basic', 'barre', 'sus', 'add9', 'maj7', 'minor7', 'seventh', 'slash']);
+const CATEGORIES = new Set(['basic', 'barre', 'sus', 'add9', 'maj7', 'minor7', 'seventh', 'extended', 'slash']);
 const pcName = (midi) => PC_NAMES[((midi % 12) + 12) % 12];
 
 describe('chords.json', () => {
@@ -45,7 +45,7 @@ describe('chords.json', () => {
         assert.ok(rel >= 1 && rel <= 5, `${c.id}: fret ${f} off the grid at baseFret ${baseFret}`);
       }
       if (baseFret === 1) assert.ok(Math.max(...frets) <= 5, `${c.id}: needs a baseFret`);
-      if (baseFret > 1) assert.ok(!frets.includes(0), `${c.id}: open strings with baseFret ${baseFret} would not be drawable`);
+      // open strings with a baseFret are fine: diagrams.js draws the O above the grid and labels "Nfr" (D6sus2 x57700)
     }
   });
 

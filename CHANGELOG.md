@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.1.0 — 2026-09-24
+
+- **My Song (Angel Beats!) complete**: all 24 chords of the tab, nine of them
+  new (G6, Em9, Fmaj7#11, Gadd11, D6sus2, Bsus4, Eb, Dsus2/F#, the x35500
+  Cmaj7). "play" lists the song by section, 1–8 in learning order, plus the
+  whole song in order (156 changes). The "my song" preset ticks all 24.
+- **Ground truth from the player**: N / Y after each advance flags a wrong
+  match or a missed chord; settings → calibrate records each ticked chord
+  (4 strums) and the six open strings (2 plucks) as labelled takes. The
+  strum counter uses energy onsets; the string tracker's events re-trigger
+  on a ringing chord.
+- **Detection**: un-ticked basic chords are docked as decoys
+  (`CONFIG.detect.prior.decoy`), from the personal benchmark on the player's
+  own recordings (`npm run bench:personal`, docs/PERSONAL.md): wrong chord
+  fired first 15 → 10%, time to match −0.15 s.
+- Mic: Front Mic Boost was back at +30 dB after a reboot (13% clipped
+  frames); +10 dB now, persisted.
+
 ## v1.0.0 "Cottontail" — 2026-09-24 (MVP)
 
 The version the user called "I like it a lot". Frozen as the baseline for the

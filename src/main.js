@@ -45,8 +45,8 @@ function renderChordPicker() {
   for (const c of ALL_CHORDS) {
     (groups[c.category] ||= []).push(c);
   }
-  const groupOrder = ['basic', 'barre', 'sus', 'add9', 'maj7', 'minor7', 'seventh', 'slash'];
-  const groupLabel = { basic:'basic', barre:'barre', sus:'sus2 / sus4', add9:'add9', maj7:'maj7', minor7:'min7', seventh:'7th', slash:'slash (bass note)' };
+  const groupOrder = ['basic', 'barre', 'sus', 'add9', 'maj7', 'minor7', 'seventh', 'extended', 'slash'];
+  const groupLabel = { basic:'basic', barre:'barre', sus:'sus2 / sus4', add9:'add9', maj7:'maj7', minor7:'min7', seventh:'7th', extended:'6 · 9 · add11 · #11', slash:'slash (bass note)' };
   for (const cat of groupOrder) {
     if (!groups[cat]) continue;
     const heading = document.createElement('div');
@@ -83,8 +83,10 @@ const PRESETS = {
   pop: () => ['C', 'G', 'D', 'A', 'E', 'Am', 'Em', 'Dm', 'F', 'Bm', 'F#m',
               'Cadd9', 'Dsus4', 'Dsus2', 'Asus2', 'Asus4', 'A7sus4',
               'Cmaj7', 'Fmaj7', 'Am7', 'Em7', 'G/B', 'D/F#', 'C/G'],
-  mysong: () => ['Am', 'Asus4', 'Asus2', 'Em', 'C', 'Am7', 'G', 'F', 'Gsus4',
-                 'D', 'Dsus2', 'Fsus4', 'Fmaj7', 'Cmaj7', 'Em7'],
+  // every chord in the Ultimate Guitar tab (Alterone's version), in song order
+  mysong: () => ['Am', 'Asus4', 'Asus2', 'Em', 'C', 'Am7', 'G', 'F', 'Gsus4', 'Gadd11', 'G6',
+                 'Dsus2', 'D', 'Eb', 'Dsus2/F#', 'Fsus4', 'Em7', 'Em9', 'Fmaj7', 'Fmaj7#11',
+                 'Cmaj7', 'Cmaj7-hi', 'Bsus4', 'D6sus2'],
   all: () => ALL_CHORDS.map(c => c.id),
   none: () => [],
 };

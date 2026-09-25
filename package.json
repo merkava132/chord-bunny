@@ -1,6 +1,6 @@
 {
   "name": "chord-bunny",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Guitar chord transition trainer that listens (vanilla JS, no dependencies)",
   "type": "module",
   "private": true,
