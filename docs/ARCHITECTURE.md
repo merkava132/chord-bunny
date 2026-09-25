@@ -125,6 +125,55 @@ argmax and confidence distributions — that table is what showed the scorer,
 not the hold rule, was the bottleneck. `npm run bench:personal` writes
 docs/PERSONAL.md.
 
+## Tempo mode
+
+`src/tempo.js` is pure: `Metronome` lays a beat grid on `performance.now()`
+(`pending(now)` hands out the clicks to schedule ahead, `landed(now)` the
+beats/bars for the UI and for advancing; `setBpm` keeps the next beat), and
+`Creep` keeps the clean/missed streaks and the 8-bar history. Clicks are
+translated onto the AudioContext clock at schedule time, so the grid keeps
+time even while the context is suspended. In tempo mode a detector match
+marks the bar `held` and the *bar* advances the pair (`pair.reason: 'bar'`);
+telemetry `tempo` per bar and `tempo-change` per creep step.
+
+## Stats and smart pairs
+
+`tools/stats.mjs` aggregates `telemetry/*.jsonl` (sessions with ≥ 10
+matches; annotated noise ranges excluded; practice minutes = gaps < 3 min
+between practice events): per chord, per transition, per day, plus the N/Y
+labels. `GET /api/stats` (serve.py, cached on the telemetry file list) feeds
+`src/progress.js` (the settings → progress panel, inline SVG) and
+`PracticeMode.setStats`. With `settings.smartPairs`, `pickNext` gets a bias
+per candidate: `1 + CONFIG.smart.weight · weakness(current → candidate)`,
+weakness = ½·clamp((p50 − 1.5 s)/3 s) + ½·(1 − matched share), unseen
+transitions 0.3 (exploration); relatedness stays the base so pairs remain
+musical. `pair` events carry `weak: true` when the bias decided.
+
+## Guitar-likeness gate
+
+`PitchAnalyzer.residual()` = the share of spectral energy the harmonic
+dictionary cannot explain, from the cached projections (free when unused).
+`GuitarGate` (src/dsp/gate.js) maps it through a logistic at
+`CONFIG.gate.residMax` with an EMA over sounding frames; `_frameInner`
+requires `gate ≥ threshold` for a raw verdict. Measured on verdict frames
+(conf ≥ 0.35): guitar 97% pass, TV 27%; per-frame features that did *not*
+separate: spectral flatness, chroma entropy, level dynamics (speech and
+strums both pulse). The value is on `onFrame`, in the debug panel and in
+telemetry frame samples as `g`.
+
+## Muted strings and the low E
+
+The string tracker reports a string that is muted in the shape as struck
+only if its open-pitch line is ≥ `mutedF0Prom` (3×) the neighbouring bins
+in an 8192-point spectrum (`STRING_DEFAULTS` in src/dsp/strings.js). The
+E2 template's learned profile weights its 2nd partial 2.2× the fundamental,
+so a chord's E3/E4 partials alone used to satisfy it: 613 → 32 false low-E
+strikes on C/Am/D in the player's session, played strings unchanged
+(GuitarSet per-frame F1 77.0% either way). On this player's input the low
+E's fundamental is below the noise floor, so the low E is only ever seen
+through partials the chord shares — `tools/learn_response.mjs` measures
+that and says so.
+
 ## Progressions
 
 `data/progressions.json` holds named chord sequences (My Song's sections,
@@ -164,6 +213,8 @@ Batched every 2 s to `POST /api/telemetry?session=<id>` and appended to
 | `perf` | `msPerFrame, maxMs, budgetMs` | every ~10 s: detector cost vs the hop budget (0.3 of 21 ms in headless Chrome) |
 | `profile` | `chords{id: n}, sessions[]` | the personal profile was relearned from the app |
 | `label` | `ts, target, kind` (`fp`/`fn`), `heard[], ts0, ts1` | the player pressed N (false match) or Y (missed chord) after an advance |
+| `tempo` | `ts, bpm, beatsPerChord, bar, target, clean` (true/false/null) | tempo mode: a bar ended |
+| `tempo-change` | `ts, from, bpm, reason` (`clean-run`/`miss-run`) | creep changed the tempo |
 | `enroll` | `ts, kind` (`chord`/`string`), `chord` or `string`, `ts0, ts1, strums` or `plucks` | a calibration step was captured |
 
 `tools/telemetry_report.mjs` turns a file into a session summary;
@@ -211,6 +262,10 @@ leaves the machine; `python -m http.server` would just drop the POSTs.
 | `eval_listen.mjs` | listen display accuracy vs flicker for show/gap holds | GuitarSet |
 | `calibrate.mjs` | confidence threshold → coverage / precision | GuitarSet |
 | `eval_strings.mjs` | per-string presence / onsets / direction vs hex-pickup GT | GuitarSet |
+| `stats.mjs` | per chord / transition / day aggregates, the player's slowest transitions (also `GET /api/stats`) | telemetry |
+| `learn_response.mjs` | this guitar + mic's partial amplitudes per open string and a frequency-response correction; is the low-E fundamental there at all | calibration plucks |
+| `gate_features.mjs`, `gate_fit.mjs` | per-frame features and their separation of guitar vs non-guitar audio | recordings |
+| `eval_ghosts.mjs` | false string strikes (string silent in the hex GT) before/after a tracker change | GuitarSet |
 | `personal_bench.mjs` | the live configuration on the player's own takes: fired / wrong-first / delay, per-target confusions, `--diag` argmax and confidence tables, noise ranges | recordings + telemetry |
 | `bench.mjs` | all of the above → `docs/BENCH.md` | GuitarSet |
 | `telemetry_report.mjs` | what happened in a session (signal, verdicts, per-target matches, confusions) | telemetry |

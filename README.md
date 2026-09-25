@@ -9,6 +9,8 @@ It also watches the **strings**: which ones rang, which one you missed, whether 
 ## Modes
 
 - **practice** — pair of chords; auto-advances on detection. Optional timer. Per-string feedback against the chord you're supposed to be holding. The next chord is always one that makes musical sense after the current one (same key, or same root — C → Csus4, Am → Am7, G → Em), never a random jump.
+- **tempo** (a checkbox in practice) — a metronome; the pair advances every bar instead of on detection. BPM (78 = My Song), 2/4/8 beats per chord, one count-in bar, a strip of the last 8 bars (green = the chord was detected in time). With **creep** on, 4 clean bars in a row raise the tempo by 2, 2 missed bars lower it. With a progression selected, the next four chords show under the pair.
+- **drill weak spots** (a checkbox in practice) — random pairs lean toward the transitions you match slowly or miss, from your own telemetry (Settings → **progress** shows the numbers: practice minutes per day, per-chord match rate, your slowest transitions).
 - **listen** — free-form chord recognizer. Plays your mic OR an audio file you load. Shows what it hears, with per-string activity for the detected shape.
 
 ## Chords
@@ -154,6 +156,15 @@ they are ticked, so the surest way to learn a section is to clear the chord
 set and pick the section; "new pair" restarts it. Add a song by appending
 `{ id, name, chords: [ids] }` — every id must exist in chords.json.
 
+## Non-guitar audio
+
+A guitar-likeness gate (`src/dsp/gate.js`, `CONFIG.gate`) turns a frame
+into "no verdict" when the harmonic dictionary cannot explain its spectrum
+(NNLS residual > 0.4): speech and TV pass 27% of the time, guitar 97%, and it
+costs one target in 420 on the personal benchmark. Ambient audio also gets
+recorded when the mic is left on; annotate non-guitar stretches in
+`data/user/sessions.json` so the benchmark and the stats skip them.
+
 ## Telemetry & recordings (local only)
 
 `serve.py` (what `./start.sh` runs) is the static server plus a sink for two
@@ -192,7 +203,28 @@ tools use — see docs/ARCHITECTURE.md "Ground truth from the player".
 screen asked for, with the live configuration; `npm run bench:personal`
 writes docs/PERSONAL.md.
 
-## Personal profile (calibration to your guitar)
+## Calibration to your guitar and mic
+
+Settings → **calibrate** records each ticked chord (4 strums) and the six
+open strings (2 plucks). "learn from my recordings" (detection panel, `POST
+/api/profile/learn`) then runs two tools:
+
+- `tools/learn_response.mjs` measures the partial amplitudes of each open
+  string on *your* guitar and mic (`data/user/partials.json`, the same shape
+  as `data/partials.json`) and fits a frequency-response correction that the
+  analyzer applies to every pitch (`CONFIG.profile.userPartials`). It also
+  reports whether the low E's fundamental (82 Hz) is present at all on your
+  input — on a front-panel mic jack it is usually not, and then the string
+  tracker cannot see the low E directly (it is only reported struck when its
+  fundamental is really there, so the "you're hitting the low E" hint stays
+  quiet rather than guessing).
+- `tools/learn_profile.mjs` learns a per-chord chroma profile from the
+  calibration takes (gold, weight ×3) and matched practice takes. It is
+  blended with `CONFIG.profile.alpha`, **0 by default**: two leave-one-out
+  runs on 408 intervals put the canonical templates ahead. The tool prints
+  the evaluation so a clean calibration run can change that.
+
+## Personal profile (chroma, off by default)
 
 Templates score a chroma with uniform weights on the chord tones. Your guitar,
 mic and strumming produce a characteristic chroma per chord (the analyzer's
