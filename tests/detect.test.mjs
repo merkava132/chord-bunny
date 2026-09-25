@@ -25,8 +25,9 @@ describe('buildTemplates', () => {
       C: ['C', 'C/G', 'C/E'], D: ['D', 'D/F#'], G: ['G', 'G/B'], A: ['A', 'A/C#'],
       Asus2: ['Asus2', 'Esus4'], Asus4: ['Asus4', 'Dsus2'], Csus2: ['Csus2', 'Gsus4'], Csus4: ['Csus4', 'Fsus2'],
       Am7: ['Am7', 'Am/G'],
+      Em7: ['Em7', 'G6'], Cmaj7: ['Cmaj7', 'Cmaj7-hi'],   // My Song: G6 = the notes of Em7; the x35500 Cmaj7 voicing
     });
-    assert.equal(T.length, CHORDS.length - 10);
+    assert.equal(T.length, CHORDS.length - 12);
   });
   it('carries mask, prior and the perfect score', () => {
     const c = T.find(t => t.id === 'C'), sus = T.find(t => t.id === 'Asus2');
