@@ -13,10 +13,35 @@
 export const ENROLL = {
   strums: 4,          // strums per chord
   plucks: 2,          // plucks per open string
-  minGapSec: 0.35,    // closer onsets are one strum (double triggers, rakes)
+  minGapSec: 0.4,     // closer onsets are one strum (double triggers, rakes)
   settleSec: 1.5,     // after the last onset, let it ring before capturing
   preRollSec: 0.3,    // captured range starts this much before the first onset
+  // Energy onsets (OnsetDetector): a frame counts when its level has risen
+  // to `ratio` × the quietest frame of the last `floorSec` and is still
+  // rising (`rise` × the previous frame), above `abs`. Frame levels are the
+  // detector's 186 ms RMS, so a strum ramps over ~9 frames; minGapSec covers
+  // the ramp. The string tracker's strum events were tried first: a ringing
+  // chord re-triggers them 8–21 times per 4 strums (2026-09-25 session).
+  onset: { ratio: 2.0, rise: 1.15, floorSec: 0.4, abs: 0.008 },   // 1.7–2.5 all find the same 15 onsets on the 2026-09-25 calibration take
 };
+
+// Counts strums / plucks from the per-frame RMS level the detector already
+// computes (ChordDetector.onUpdate). Pure: push(ts, level) → true on an onset.
+export class OnsetDetector {
+  constructor(opts = ENROLL) { this.o = opts; this.hist = []; this.prev = 0; this.last = -Infinity; }
+  reset() { this.hist.length = 0; this.prev = 0; this.last = -Infinity; }
+  push(ts, level) {
+    const { ratio, rise, floorSec, abs } = this.o.onset;
+    const h = this.hist;
+    let floor = Infinity; for (const [, l] of h) if (l < floor) floor = l;   // quietest recent frame, before this one
+    h.push([ts, level]); while (h.length && ts - h[0][0] > floorSec) h.shift();
+    const prev = this.prev; this.prev = level;
+    if (level < abs || ts - this.last < this.o.minGapSec) return false;
+    if (!(level >= ratio * Math.max(floor, abs / ratio)) || !(level > rise * prev)) return false;
+    this.last = ts;
+    return true;
+  }
+}
 
 // Open strings, low to high; `string` is the tracker's index (0 = low E).
 export const OPEN_STRINGS = [

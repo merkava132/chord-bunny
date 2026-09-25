@@ -265,3 +265,22 @@ fought back. Newest at the bottom.
   env, outside the sandbox, `?autostart=1` + fake audio device. Driving the
   UI through `window.__cb.practice` (now exposed like `detector`/`tracker`)
   made the caption and calibration paths reachable without a real mic.
+
+## 2026-09-24 — calibration counted strums that never happened
+
+- The first "calibrate my chords" build counted onsets from the string
+  tracker's `strum` events (peak ≥ coach.strumPeakMin). On the user's run
+  the tracker emitted 8–21 events per chord step, most at peaks 1–3 while a
+  chord rang or the room was quiet; every step advanced after 1–2 real
+  strums, and the C step captured nothing but noise floor. The tracker's
+  events are onset *candidates* for the string display, not strums.
+- Replaced by `OnsetDetector` in src/enroll.js on the detector's own
+  per-frame RMS (onUpdate now passes the frame time): a rise to 2× the
+  quietest frame of the last 0.4 s, still rising, above 0.008 RMS, 0.4 s
+  refractory. Validated by replaying the take through the same framing and
+  looking at an envelope plot with both tick sets (scratchpad onsets.mjs /
+  onsets.png) — the plot settled it in one look; the numbers alone did not
+  say which set was right.
+- Note for the tools: the `enroll` events from session 2026-09-25T03-14-58
+  are not clean ground truth (windows overlap, early advances). Ignore that
+  session's enroll events; the user re-ran after the fix.

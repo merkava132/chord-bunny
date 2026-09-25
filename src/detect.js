@@ -273,7 +273,7 @@ export class ChordDetector {
       this.history.length = 0;
       this.stable.push(t, null, true);
       if (this.run.id) { if (this.onRun) this.onRun({ id: this.run.id, ts0: +this.run.ts0.toFixed(3), dur: +(t - this.run.ts0).toFixed(3) }); this.run = { id: null, ts0: t }; }
-      this._emitUpdate(null, 0, level);
+      this._emitUpdate(null, 0, level, t);
       if (this.onFrame) this.onFrame({ act: null, chroma: null, level, peak, clip, scores: null, t, templates: this.templates });
       return;
     }
@@ -298,14 +298,15 @@ export class ChordDetector {
       if (this.run.id && this.onRun) this.onRun({ id: this.run.id, ts0: +this.run.ts0.toFixed(3), dur: +(t - this.run.ts0).toFixed(3) });
       this.run = { id: smoothed, ts0: t };
     }
-    this._emitUpdate(smoothed, confidence, level);
+    this._emitUpdate(smoothed, confidence, level, t);
     if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, peak, clip, scores, t, bestId, smoothed, confidence, templates: this.templates });
 
     const fired = this.stable.push(t, smoothed);
     if (fired && this.onStable) this.onStable(fired, confidence, this.equivalents(fired));
   }
 
-  _emitUpdate(chordId, confidence, level) {
-    if (this.onUpdate) this.onUpdate(chordId, confidence, level, chordId ? this.equivalents(chordId) : []);
+  // onUpdate(id, confidence, level, ids, t): every frame, t = stream time of the frame centre
+  _emitUpdate(chordId, confidence, level, t) {
+    if (this.onUpdate) this.onUpdate(chordId, confidence, level, chordId ? this.equivalents(chordId) : [], t);
   }
 }

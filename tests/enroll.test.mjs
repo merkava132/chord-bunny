@@ -1,7 +1,7 @@
 // Enrollment: steps, onset counting, settle wait, skip/stop.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Enrollment, ENROLL, buildSteps, openStringChord, OPEN_STRINGS } from '../src/enroll.js';
+import { Enrollment, ENROLL, buildSteps, openStringChord, OPEN_STRINGS, OnsetDetector } from '../src/enroll.js';
 
 const CH = [{ id: 'G', name: 'G' }, { id: 'C', name: 'C' }];
 
@@ -109,5 +109,36 @@ describe('Enrollment', () => {
     const b = make(); b.e.start(); b.log.length = 0; b.e.abort();
     assert.deepEqual(b.log, []);
     assert.equal(b.e.active, false);
+  });
+});
+
+describe('OnsetDetector (energy onsets from frame levels)', () => {
+  const HOP = 1024 / 48000;
+  // feed a level envelope: array of [seconds, level] segments, linearly interpolated per frame
+  const run = (env, det = new OnsetDetector()) => {
+    const out = []; let t = 0;
+    for (let i = 0; i < env.length - 1; i++) {
+      const [d, a] = env[i], [, b] = env[i + 1];
+      for (let k = 0; k * HOP < d; k++, t += HOP) if (det.push(t, a + (b - a) * (k * HOP / d))) out.push(+t.toFixed(2));
+    }
+    return out;
+  };
+  it('a strum (fast rise from the floor, slow decay) is one onset', () => {
+    assert.deepEqual(run([[0.5, 0.005], [0.1, 0.005], [0.15, 0.05], [1.5, 0.05], [0.5, 0.006], [0.1, 0.006]]).length, 1);
+  });
+  it('four ringing strums count four times, a double-trigger inside minGapSec does not', () => {
+    // each entry is [seconds, level at its start], ramping to the next entry's level:
+    // 0.1 s rise to 0.05, 0.15 s hold, 0.9 s decay to 0.01, then the next rise
+    const env = [[0.5, 0.005], [0.1, 0.005]];
+    for (let i = 0; i < 3; i++) env.push([0.15, 0.05], [0.9, 0.05], [0.1, 0.01]);
+    env.push([0.15, 0.05], [0.05, 0.05], [0.5, 0.08], [0.1, 0.006]);   // 4th strum, then a rake to 0.08 only 0.2 s after it
+    assert.equal(run(env).length, 4);
+  });
+  it('a chord still ringing does not re-trigger; a louder new strum on top of it does', () => {
+    assert.equal(run([[0.5, 0.005], [0.1, 0.005], [0.15, 0.05], [2, 0.05], [1, 0.03], [0.1, 0.03]]).length, 1);   // slow decay only
+    assert.equal(run([[0.5, 0.005], [0.1, 0.005], [0.15, 0.05], [1, 0.02], [0.1, 0.02], [0.15, 0.06], [1, 0.06], [0.1, 0.01]]).length, 2);
+  });
+  it('handling noise below the absolute floor never counts', () => {
+    assert.equal(run([[0.5, 0.002], [0.1, 0.002], [0.1, 0.007], [0.5, 0.007], [0.1, 0.002], [0.1, 0.002], [0.1, 0.007], [0.5, 0.007], [0.1, 0.002]]).length, 0);
   });
 });

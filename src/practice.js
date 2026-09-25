@@ -19,7 +19,7 @@ import * as settings from './settings.js';
 import * as telemetry from './telemetry.js';
 import { CONFIG } from './config.js';
 import { Coach } from './coach.js';
-import { Enrollment, buildSteps } from './enroll.js';
+import { Enrollment, buildSteps, OnsetDetector } from './enroll.js';
 
 export class PracticeMode {
   constructor({ root, allChords, getEnabled, getDetector, onCurrent = null, progressions = [], onCalibStatus = null }) {
@@ -103,11 +103,7 @@ export class PracticeMode {
   // fed by main.js from the detector / string tracker (every frame, every strum)
   observeFrame(f) { if (this.coachTimer) this.coach.pushFrame(f, telemetry.now()); }
   observeStrum(ev) {
-    if (this.calib) {   // calibration counts onsets (strums, plucks); ignore handling noise like the coach does
-      let peak = 0; for (const x of ev.strings) if (x.peak > peak) peak = x.peak;
-      if (peak >= CONFIG.coach.strumPeakMin) this.calib.onset(ev.t);
-      return;
-    }
+    if (this.calib) return;   // calibration counts energy onsets (see _wireDetector); the tracker re-triggers on a ringing chord
     if (this.coachTimer) this.coach.pushStrum(ev, telemetry.now());
   }
 
@@ -158,7 +154,8 @@ export class PracticeMode {
     const det = this.getDetector();
     if (!det) return;
     this._syncCandidates();
-    det.onUpdate = (id, conf, level, ids) => {
+    det.onUpdate = (id, conf, level, ids, t) => {
+      if (this.calib && this.calibOnsets.push(t, level)) this.calib.onset(t);   // strums / plucks while calibrating
       const match = id ? this._isMatch(ids) : false;
       this.heardEl.textContent = id ? this._heardName(ids) : '—';
       // Meter (CONFIG.meter): the detection threshold sits at the midpoint,
@@ -282,7 +279,7 @@ export class PracticeMode {
     // one keypress of ground truth: a match may have been wrong, a timer
     // advance may have missed a chord that was being played
     if (prev && !timedOut && heard) this._offerFeedback(prev, 'fp', heard, prevTs);
-    else if (prev && timedOut && !wasMatched) this._offerFeedback(prev, 'fn', null, prevTs);
+    else if (prev && timedOut && !wasMatched && this.getDetector()?.running) this._offerFeedback(prev, 'fn', null, prevTs);   // nothing to report with the mic off
   }
 
   // ---- ground truth from the player: one keypress after an advance ----
@@ -344,6 +341,7 @@ export class PracticeMode {
     this.timerEl.hidden = true;
     this.root.classList.add('calibrating');
     this.calibBar.hidden = false;
+    this.calibOnsets = new OnsetDetector();
     this.calib = new Enrollment({
       steps: buildSteps(chords),
       now: () => this._ts(),
