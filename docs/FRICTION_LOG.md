@@ -242,3 +242,26 @@ fought back. Newest at the bottom.
   transiently. Not reproduced; treat a single 0% as a flake and rerun.
 - bench.mjs's "all 53 (listen mode)" row ran with practice-mode scoring after
   the size bonus landed (62.5% vs 74.4%); rows now say which scoring they use.
+
+## 2026-09-24 — feedback labels + calibration UI (next branch)
+
+- **zsh `noclobber` silently refused two heredoc writes** (`cat > src/enroll.js`
+  printed "file exists" among other output and the old file stayed). The
+  test suite still passed because the old module matched the old test, while
+  practice.js already called the new API — only the browser run would have
+  caught it. In scripts use `>|` for every rewrite and grep for the new symbol
+  afterwards.
+- **`hidden` loses to a `display:flex` rule.** The calibration bar's class
+  set `display: flex`, so `el.hidden = true` did nothing and the skip/stop
+  buttons leaked into normal practice (visible in the first screenshot, not in
+  any DOM check — the attribute was true). `.calib-bar[hidden] { display:
+  none }` fixes it; worth a rule for any flex/grid element toggled by
+  `hidden`.
+- **Fake-mic screenshots: the real tracker keeps firing strums** from the
+  test WAV during calibration, so synthetic onsets with timestamps in the
+  past were merged away by the min-gap rule and my "2 strums" step read
+  "1 / 4". Feed synthetic onsets with timestamps ahead of the stream clock.
+- Headless Chrome recipe from memory still holds: `--headless=new`, clean
+  env, outside the sandbox, `?autostart=1` + fake audio device. Driving the
+  UI through `window.__cb.practice` (now exposed like `detector`/`tracker`)
+  made the caption and calibration paths reachable without a real mic.

@@ -44,6 +44,16 @@
         <div class="chord-meta" id="next-meta"></div>
       </div>
     </div>
+    <!-- calibration (settings → calibrate): one chord at a time, count the strums -->
+    <div class="calib-bar" id="calib-bar" hidden>
+      <span id="calib-text"></span>
+      <span class="btns">
+        <button id="calib-skip" title="next chord without recording this one">skip</button>
+        <button id="calib-stop" title="end calibration">stop</button>
+      </span>
+    </div>
+    <!-- after an advance: one keypress says the detector was wrong (also clickable) -->
+    <div class="feedback" id="feedback" hidden title="click, or press the key, if the detector got this one wrong"></div>
 
     <div class="detection-bar" id="detection-bar">
       <div class="heard">heard: <span id="heard-chord">—</span></div>
@@ -143,6 +153,18 @@
       </label>
     </details>
     <details>
+      <summary>calibrate</summary>
+      <div class="calib-row">
+        <button id="calib-btn" title="strum each ticked chord a few times while the app knows which one it is">calibrate my chords</button>
+        <span id="calib-status">teach it what your guitar sounds like: with the mic on, strum each ticked chord 4 times, then pluck each open string twice. About two minutes for five chords.</span>
+      </div>
+      <p class="picker-note">Practice already learns from takes that matched; calibration adds takes where the chord
+      is known for certain — including the ones it keeps missing — and the open-string plucks show how each
+      string's overtones leak into its neighbours. After an advance you can also press
+      <b>N</b> (that match was wrong) or <b>Y</b> (I was playing it, the timer moved on). Nothing changes
+      until you press "learn from my recordings" under detection.</p>
+    </details>
+    <details>
       <summary>how it listens</summary>
       <div class="about">
         <p>Each 186 ms window of audio is decomposed onto harmonic templates for every
@@ -193,6 +215,8 @@
 
 <footer>
   <span>just sit down and play.</span>
+  <!-- version: CHANGELOG.md is the source of truth (git tag v1.0.0) -->
+  <span class="version" title="see CHANGELOG.md">v1.0.0 "Cottontail"</span>
 </footer>
 
 <script type="module" src="src/main.js"></script>

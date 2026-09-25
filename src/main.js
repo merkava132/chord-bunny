@@ -455,7 +455,9 @@ practice = new PracticeMode({
   getEnabled: () => settings.get('enabledChords'),
   getDetector: () => detector,
   onCurrent: (chord) => setVoicing(chord),
+  onCalibStatus: (text) => { document.getElementById('calib-status').textContent = text; },
 });
+document.getElementById('calib-btn').addEventListener('click', () => practice?.startCalibration());
 listen = new ListenMode({
   root: document.getElementById('listen'),
   allChords: ALL_CHORDS,
@@ -493,4 +495,4 @@ if (params.get('chord')) {
   if (c && practice) { practice.current = c; practice.next = ALL_CHORDS.find(x => x.id !== c.id); practice._render(practice.current, practice.next); }
 }
 if (params.get('autostart')) enableMic().then(() => { window.__micStartedAt = performance.now(); });
-window.__cb = { get detector() { return detector; }, get tracker() { return stringTracker; }, settings };
+window.__cb = { get detector() { return detector; }, get tracker() { return stringTracker; }, get practice() { return practice; }, settings };

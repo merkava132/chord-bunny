@@ -188,6 +188,42 @@ main {
 }
 .coach::before { content: 'coach · '; color: var(--accent); font-family: var(--mono); font-size: 0.8rem; }
 
+/* ---------- feedback caption + calibration bar (practice) ---------- */
+.feedback {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--fg-dim);
+  margin: -14px 0 18px;
+  cursor: pointer;
+  user-select: none;
+}
+.feedback:hover { color: var(--fg); }
+.feedback[data-kind="noted"] { color: var(--accent-2); cursor: default; }
+.calib-bar {
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  margin: -10px 0 18px;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+.calib-bar button {
+  background: var(--bg-3); color: var(--fg); border: none; border-radius: 8px;
+  padding: 6px 12px; font: inherit; font-size: 0.85rem; cursor: pointer;
+}
+.calib-bar button:hover { background: #303644; }
+.calib-bar[hidden], .feedback[hidden] { display: none; }   /* a display rule beats the hidden attribute */
+.calib-bar .btns { display: inline-flex; gap: 8px; }
+#practice.calibrating .chord-card.next,
+#practice.calibrating .arrow { opacity: 0.15; }
+.calib-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 8px; font-size: 0.85rem; color: var(--fg-dim);
+}
+.calib-row button { font: inherit; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--bg-3); background: var(--bg-2); color: var(--fg); cursor: pointer; white-space: nowrap; }
+.calib-row button:hover { background: var(--bg-3); }
+.picker-note b { color: var(--fg); font-family: var(--mono); }
+
 /* ---------- controls ---------- */
 .practice-controls,
 .listen-controls {
@@ -322,6 +358,7 @@ footer {
   font-size: 0.8rem;
   border-top: 1px solid var(--bg-3);
 }
+footer .version { margin-left: 14px; font-family: var(--mono); opacity: 0.55; }
 
 /* small screens */
 @media (max-width: 600px) {
@@ -329,6 +366,7 @@ footer {
   .big-chord { font-size: 3.5rem; }
   .arrow { display: none; }
   .practice-controls .timer-display { margin-left: 0; }
+  #practice.calibrating .chord-card.next { display: none; }   /* stacked: no room for a dimmed placeholder */
 }
 
 /* ---------- per-string activity ---------- */

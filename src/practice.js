@@ -6,6 +6,11 @@
 //     and a basic chord you did NOT enable counts for a richer target on the
 //     same root that contains it (Am heard while practising Am7 alone is
 //     fine — you didn't ask to tell them apart)
+//   - after each advance, one keypress can say the detector was wrong (N after
+//     a match, Y after a timer advance) → telemetry `label`; "calibrate my
+//     chords" (src/enroll.js) records each chord, then each open string, while
+//     it is known for certain → telemetry `enroll`. Both feed
+//     tools/learn_profile.mjs.
 
 import { renderInto } from './diagrams.js';
 import { pcSubset, PC_INDEX } from './detect.js';
@@ -14,11 +19,13 @@ import * as settings from './settings.js';
 import * as telemetry from './telemetry.js';
 import { CONFIG } from './config.js';
 import { Coach } from './coach.js';
+import { Enrollment, buildSteps } from './enroll.js';
 
 export class PracticeMode {
-  constructor({ root, allChords, getEnabled, getDetector, onCurrent = null, progressions = [] }) {
+  constructor({ root, allChords, getEnabled, getDetector, onCurrent = null, progressions = [], onCalibStatus = null }) {
     this.root = root;
     this.onCurrent = onCurrent;
+    this.onCalibStatus = onCalibStatus;   // (text) → the status line in the settings "calibrate" panel
     this.allChords = allChords;
     this.getEnabled = getEnabled;
     this.getDetector = getDetector;
@@ -39,12 +46,21 @@ export class PracticeMode {
     this.hintEl      = root.querySelector('#detection-hint');
     this.coachEl     = root.querySelector('#coach-hint');
     this.timerEl     = root.querySelector('#timer-display');
+    this.feedbackEl  = root.querySelector('#feedback');
+    this.calibBar    = root.querySelector('#calib-bar');
+    this.calibText   = root.querySelector('#calib-text');
 
     this.current = null;
     this.next = null;
     this.lastSeed = 0;
     this.shownAt = 0;                 // telemetry: when the current target appeared
+    this.shownTs = 0;                 // … on the audio-stream clock (labels refer to recordings)
     this.lastMissId = null;
+    this.lastMatchIds = null;         // the match that is about to advance the pair
+    this.matchedThisTarget = false;
+    this.pending = null;              // feedback offer after an advance: { target, kind, heard, ts0, ts1 }
+    this.feedbackTimer = null;
+    this.calib = null;                // Enrollment while calibrating
 
     // controls
     root.querySelector('#reroll-btn').addEventListener('click', () => this.rerollPair());
@@ -59,6 +75,10 @@ export class PracticeMode {
       settings.set('timerSecs', Number(e.target.value));
       this._restartTimer();
     });
+    this.feedbackEl.addEventListener('click', () => this._label());
+    document.addEventListener('keydown', (e) => this._onKey(e));
+    root.querySelector('#calib-skip').addEventListener('click', () => this.calib?.skip());
+    root.querySelector('#calib-stop').addEventListener('click', () => this.calib?.stop());
 
     // initial UI state from settings
     root.querySelector('#autoadvance-cb').checked = settings.get('autoAdvance');
@@ -82,7 +102,14 @@ export class PracticeMode {
 
   // fed by main.js from the detector / string tracker (every frame, every strum)
   observeFrame(f) { if (this.coachTimer) this.coach.pushFrame(f, telemetry.now()); }
-  observeStrum(ev) { if (this.coachTimer) this.coach.pushStrum(ev, telemetry.now()); }
+  observeStrum(ev) {
+    if (this.calib) {   // calibration counts onsets (strums, plucks); ignore handling noise like the coach does
+      let peak = 0; for (const x of ev.strings) if (x.peak > peak) peak = x.peak;
+      if (peak >= CONFIG.coach.strumPeakMin) this.calib.onset(ev.t);
+      return;
+    }
+    if (this.coachTimer) this.coach.pushStrum(ev, telemetry.now());
+  }
 
   enable() {
     this.rerollPair(/*fresh*/ true);
@@ -113,6 +140,8 @@ export class PracticeMode {
   onSequenceChanged() { this._syncCandidates(); this.rerollPair(true); }
 
   disable() {
+    this._clearFeedback();
+    if (this.calib) { this.calib.abort(); this._endCalibration(null); }
     if (this.timerHandle) clearInterval(this.timerHandle);
     this.timerHandle = null;
     if (this.coachTimer) clearInterval(this.coachTimer);
@@ -138,6 +167,7 @@ export class PracticeMode {
       this.confFill.dataset.state = !id ? 'none' : match ? 'match' : 'other';
     };
     det.onStable = (id, conf, ids) => {
+      if (this.calib) return;   // calibrating: the chord is known, nothing to match
       this._onStableChord(ids);
       if (this.current && !this._isMatch(ids) && ids[0] !== this.lastMissId) {
         this.lastMissId = ids[0];
@@ -175,7 +205,8 @@ export class PracticeMode {
     const auto = !!settings.get('autoAdvance');
     telemetry.log('match', { ts: this._ts(), target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1), advanced: auto });
     this.coach.setMatched(telemetry.now());
-    if (auto) this._matched();
+    this.matchedThisTarget = true;
+    if (auto) { this.lastMatchIds = ids; this._matched(); }
   }
 
   _matched() {
@@ -228,23 +259,129 @@ export class PracticeMode {
 
   advance() {
     const timedOut = settings.get('timerEnabled') && performance.now() >= this.timerEnd;
+    const reason = timedOut ? 'timer' : 'advance';
+    const prev = this.current, prevTs = this.shownTs, heard = this.lastMatchIds, wasMatched = this.matchedThisTarget;
+    this.lastMatchIds = null;
     if (this._sequence()) {
       this.seqIndex++;
       this.current = this._seqAt(this.seqIndex);
       this.next = this._seqAt(this.seqIndex + 1);
       this._render(this.current, this.next);
-      this._restartTimer();
-      telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: timedOut ? 'timer' : 'advance', sequence: settings.get('sequence'), index: this.seqIndex });
-      return;
+      telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason, sequence: settings.get('sequence'), index: this.seqIndex });
+    } else {
+      const enabled = this._enabledList();
+      if (enabled.length < 2) return;
+      this.current = this.next;
+      this.next = pickNext(this.current, enabled);
+      this._render(this.current, this.next);
+      telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason });
     }
-    const enabled = this._enabledList();
-    if (enabled.length < 2) return;
-    this.current = this.next;
-    this.next = pickNext(this.current, enabled);
-    this._render(this.current, this.next);
-    telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: timedOut ? 'timer' : 'advance' });
     this._restartTimer();
+    // one keypress of ground truth: a match may have been wrong, a timer
+    // advance may have missed a chord that was being played
+    if (prev && !timedOut && heard) this._offerFeedback(prev, 'fp', heard, prevTs);
+    else if (prev && timedOut && !wasMatched) this._offerFeedback(prev, 'fn', null, prevTs);
   }
+
+  // ---- ground truth from the player: one keypress after an advance ----
+  // fp: the detector matched and advanced — "press N if that was wrong";
+  // fn: the timer advanced without a match — "press Y if you were playing it".
+  // Nothing is logged when the player does nothing (the default reading
+  // stays: match = correct, timer = not played). Telemetry `label`:
+  // { ts, target, kind, heard, ts0, ts1 } — ts0/ts1 = the target's on-screen
+  // range on the stream clock, so the interval can be found in the recording.
+  _offerFeedback(chord, kind, heard, ts0) {
+    this._clearFeedback();
+    this.pending = { target: chord.id, kind, heard: heard || [], ts0, ts1: this._ts() };
+    this.feedbackEl.textContent = kind === 'fp'
+      ? `heard ${chord.name} ✓ — press N if that was wrong`
+      : `${chord.name} not heard — press Y if you were playing it`;
+    this.feedbackEl.dataset.kind = kind;
+    this.feedbackEl.hidden = false;
+    this.feedbackTimer = setTimeout(() => this._clearFeedback(), 5000);
+  }
+
+  _clearFeedback() {
+    if (this.feedbackTimer) clearTimeout(this.feedbackTimer);
+    this.feedbackTimer = null;
+    this.pending = null;
+    this.feedbackEl.hidden = true;
+  }
+
+  _label() {
+    const p = this.pending;
+    if (!p) return;
+    telemetry.log('label', { ts: this._ts(), ...p });
+    this._clearFeedback();
+    this.feedbackEl.textContent = 'noted ✓';
+    this.feedbackEl.dataset.kind = 'noted';
+    this.feedbackEl.hidden = false;
+    this.feedbackTimer = setTimeout(() => this._clearFeedback(), 1500);
+  }
+
+  _onKey(e) {
+    if (!this.pending || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/^(input|select|textarea)$/i.test(e.target?.tagName || '')) return;
+    const k = e.key.toLowerCase();
+    if ((this.pending.kind === 'fp' && k === 'n') || (this.pending.kind === 'fn' && k === 'y')) { e.preventDefault(); this._label(); }
+  }
+
+  // ---- calibration: strum each enabled chord, then pluck each open string,
+  // while the app knows which ----
+  // Telemetry `enroll`: { ts, kind: 'chord', chord, ts0, ts1, strums } per
+  // chord and { ts, kind: 'string', string: 0..5 (0 = low E), ts0, ts1, plucks }
+  // per open string.
+  startCalibration() {
+    if (this.calib) return;
+    if (!this.getDetector()) { this._calibStatus('turn the mic on first (the mic chip, top right)'); return; }
+    const chords = this._enabledList();
+    if (!chords.length) { this._calibStatus('tick some chords under "chord set" first'); return; }
+    this._clearFeedback();
+    if (this.timerHandle) clearInterval(this.timerHandle);
+    this.timerHandle = null;
+    this.timerEl.hidden = true;
+    this.root.classList.add('calibrating');
+    this.calibBar.hidden = false;
+    this.calib = new Enrollment({
+      steps: buildSteps(chords),
+      now: () => this._ts(),
+      onShow: (step, i, n) => {
+        this.current = step.chord; this.next = null;   // an open string is a pseudo-chord: one open, five muted
+        this._render(step.chord, null);
+        this.coach.setTarget(null, telemetry.now());   // no hints while calibrating
+        this.hintEl.textContent = `calibrating · ${step.kind === 'chord' ? 'chord' : 'open string'} ${i + 1} of ${n}`;
+      },
+      onProgress: (step, count, need) => {
+        this.calibText.textContent = step.kind === 'chord'
+          ? `strum ${step.chord.name} ${need} times, slowly, let it ring · ${count} / ${need}`
+          : `pluck the open ${step.name} string ${need === 2 ? 'twice' : need + ' times'}, let it ring · ${count} / ${need}`;
+      },
+      onCapture: (c) => {
+        const range = { ts0: +c.ts0.toFixed(3), ts1: +c.ts1.toFixed(3) };
+        if (c.step.kind === 'chord') telemetry.log('enroll', { ts: this._ts(), kind: 'chord', chord: c.step.chord.id, ...range, strums: c.count });
+        else telemetry.log('enroll', { ts: this._ts(), kind: 'string', string: c.step.string, ...range, plucks: c.count });
+      },
+      onDone: (n) => this._endCalibration(n),
+    });
+    this._calibStatus('calibrating — follow the chord card above');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    this.calib.start();
+  }
+
+  // n = { chords, strings } captured; null when the mode was left mid-way (no status, no reroll)
+  _endCalibration(n) {
+    this.calib = null;
+    this.root.classList.remove('calibrating');
+    this.calibBar.hidden = true;
+    if (n === null) return;
+    const parts = [];
+    if (n.chords) parts.push(`${n.chords} chord${n.chords === 1 ? '' : 's'}`);
+    if (n.strings) parts.push(`${n.strings} open string${n.strings === 1 ? '' : 's'}`);
+    this._calibStatus(parts.length ? `calibrated ${parts.join(' + ')} — the next "learn from my recordings" uses them` : 'calibration stopped — nothing captured');
+    this.rerollPair(true);
+  }
+
+  _calibStatus(text) { if (this.onCalibStatus) this.onCalibStatus(text); }
 
   _enabledList() {
     const ids = new Set(this.getEnabled());
@@ -254,7 +391,9 @@ export class PracticeMode {
   _render(cur, next) {
     if (this.onCurrent) this.onCurrent(cur);
     this.shownAt = telemetry.now();
+    this.shownTs = this._ts();
     this.lastMissId = null;
+    this.matchedThisTarget = false;
     this.coach.setTarget(cur, this.shownAt);
     const seq = this._sequence();
     if (this.seqPosEl) {
