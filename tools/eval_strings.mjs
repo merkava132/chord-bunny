@@ -1,5 +1,5 @@
 // Per-string evaluation against GuitarSet's hex-pickup ground truth.
-//   node tools/eval_strings.mjs [--subset=open|all] [--set k=v,...] [--verbose]
+//   node tools/eval_strings.mjs [--subset=open|all] [--set=k=v,...] [--verbose]   (--set=…, one token: "--set k=v" is silently ignored)
 // For each chord segment the hypothesis voicing = the shape the player is
 // holding (mode of GT per-string pitches); muted strings → open pitch.
 // Reports: per-frame string presence accuracy/F1, onset recall/precision,
