@@ -1,7 +1,7 @@
 // SVG chord-chart renderer. Input: a chord object from chords.json.
 // Output: SVGElement to inject into the DOM.
 
-const W = 130, H = 160;
+const W = 142, H = 160;   // 142: room for the "5fr" base-fret label right of the grid (was clipped at 130)
 const GRID_X = 18, GRID_Y = 32;
 const STR_GAP = 18;          // horizontal: 6 strings → 5 gaps
 const FRET_GAP = 22;         // vertical: 5 frets shown
