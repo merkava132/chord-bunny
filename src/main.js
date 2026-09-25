@@ -10,6 +10,7 @@ import { StringTracker } from './dsp/strings.js';
 import { StringsView } from './strings-ui.js';
 import { Recorder } from './audio/recorder.js';
 import * as telemetry from './telemetry.js';
+import * as progress from './progress.js';
 
 // ?cfg=detect.lam:0.4,listen.showMs:100 — experiment without editing (logged below)
 const CFG_OVERRIDES = applyOverrides(new URLSearchParams(location.search).get('cfg'));
@@ -460,6 +461,21 @@ practice = new PracticeMode({
   onCalibStatus: (text) => { document.getElementById('calib-status').textContent = text; },
 });
 document.getElementById('calib-btn').addEventListener('click', () => practice?.startCalibration());
+
+// ---------- progress panel + weak-spot drilling (GET /api/stats) ----------
+const progressBody = document.getElementById('progress-body'), progressBtn = document.getElementById('progress-refresh');
+async function loadStats() {
+  progressBtn.disabled = true;
+  try {
+    const st = await progress.fetchStats();
+    practice?.setStats(st);
+    progress.render(progressBody, st);
+  } catch (err) {
+    progressBody.innerHTML = `<p class="pg-empty">no statistics: ${err.message} (serve.py provides /api/stats)</p>`;
+  } finally { progressBtn.disabled = false; }
+}
+progressBtn.addEventListener('click', loadStats);
+loadStats();
 listen = new ListenMode({
   root: document.getElementById('listen'),
   allChords: ALL_CHORDS,

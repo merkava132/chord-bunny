@@ -15,6 +15,7 @@
     "eval:strings": "node tools/eval_strings.mjs",
     "calibrate": "node tools/calibrate.mjs",
     "report": "node tools/telemetry_report.mjs latest",
+    "stats": "node tools/stats.mjs",
     "bench:personal": "node tools/personal_bench.mjs --diag --write=docs/PERSONAL.md",
     "labels": "node tools/session_labels.mjs latest --replay",
     "fetch-testdata": "python3 testdata/fetch_guitarset.py"

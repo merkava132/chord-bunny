@@ -75,6 +75,10 @@
         <input type="checkbox" id="autoadvance-cb" checked>
         auto-advance on detection
       </label>
+      <label class="toggle" title="random pairs lean toward the transitions you match slowly or miss (see progress)">
+        <input type="checkbox" id="smart-cb" checked>
+        drill weak spots
+      </label>
       <label class="toggle">
         <input type="checkbox" id="timer-cb">
         also advance on timer
@@ -163,6 +167,14 @@
       string's overtones leak into its neighbours. After an advance you can also press
       <b>N</b> (that match was wrong) or <b>Y</b> (I was playing it, the timer moved on). Nothing changes
       until you press "learn from my recordings" under detection.</p>
+    </details>
+    <details>
+      <summary>progress</summary>
+      <div class="pg-head">
+        <span class="pg-status" id="progress-status">from your local telemetry (telemetry/*.jsonl); sessions with fewer than 10 matches don't count.</span>
+        <button id="progress-refresh" title="re-read the telemetry">refresh</button>
+      </div>
+      <div class="progress" id="progress-body"><p class="pg-empty">loading…</p></div>
     </details>
     <details>
       <summary>how it listens</summary>
