@@ -120,6 +120,11 @@ describe('distinguishing-note check (CONFIG.stable.thirdMin)', () => {
     assert.equal(missingDistinguisher(chroma({ C: 0.3, E: 0.2, G: 0.2 }), by('C'), T), null);
     assert.equal(missingDistinguisher(chroma({ E: 0.3, G: 0.3, C: 0.02 }), by('C'), T), PC_INDEX.C);
   });
+  it('an E major whose G# smears into G cannot fire Em: the minor third must beat the major third by thirdRatio', () => {
+    assert.equal(missingDistinguisher(chroma({ E: 0.3, 'G#': 0.3, B: 0.2, G: 0.06 }), by('Em'), T), PC_INDEX.G);
+    assert.equal(missingDistinguisher(chroma({ E: 0.3, 'G#': 0.07, B: 0.2, G: 0.09 }), by('Em'), T), PC_INDEX.G);   // the decayed-E case
+    assert.equal(missingDistinguisher(chroma({ E: 0.3, 'G#': 0.03, B: 0.2, G: 0.12 }), by('Em'), T), null);
+  });
   it('ChromaWindow averages the last half second and clears on reset', () => {
     const w = new ChromaWindow(0.5);
     w.push(0, chroma({ A: 0.4 })); const m = w.push(0.2, chroma({ A: 0.2 }));

@@ -107,6 +107,11 @@ export const CONFIG = {
     // handed the tie to the ticked Am at confidence 0.7. On the player's own
     // takes (personal bench) the check is measured in the commit message.
     thirdMin: 0.04,
+    // …and must be at least thirdRatio × the rival's own distinguishing note
+    // (Em's G vs E's G#). 2026-09-25: a housemate's E major decayed into
+    // G 0.07–0.10 next to G# 0.06–0.07 and fired Em with thirdMin alone;
+    // the ratio there was 1.2–1.4, so 2 blocks it with margin. 0 disables.
+    thirdRatio: 2,
     thirdWinSec: 0.5,
   },
   listen: {
@@ -207,6 +212,14 @@ export const CONFIG = {
     fastSec: 1.5,
     slowSec: 4.5,
     minN: 2,
+  },
+  idle: {
+    // mic auto-off after this long without a confident verdict at playing
+    // level. Talking near the mic gives verdicts at ~0.012 RMS and conf ≤ 0.5;
+    // strums that match sit at ≥ 0.02 and conf ≥ 0.6 (2026-09-25 sessions).
+    minutes: 15,
+    minConf: 0.55,
+    minLevel: 0.02,
   },
   input: {
     meterDecay: 0.85,     // header level meter fall per update

@@ -178,8 +178,11 @@ locally" toggle under *detection*:
 - **Audio** → `recordings/<session>/seg-NNNN.wav` (or `$CB_REC_DIR`, which
   `start.sh` points at `/mnt/aegis/chord-bunny/recordings` when that drive
   exists): every stretch of non-silence with 0.5 s pre-roll and a 2 s tail,
-  16-bit mono at the AudioContext rate, capped at 60 s per file and 3 GB
-  total (oldest pruned). Segment times are on the audio-stream clock (`ts`),
+  16-bit mono at the AudioContext rate, capped at 60 s per file and 20 GB
+  total (oldest WAVs pruned; the segment index and tool caches stay). The
+  mic chip toggles the mic off, and it switches itself off after 15 minutes
+  without a confident verdict at playing level (`CONFIG.idle`) — a tab left
+  open with the mic on records the room. Segment times are on the audio-stream clock (`ts`),
   the same clock as the frame events.
 
 Nothing is sent anywhere; `python -m http.server` would just drop the POSTs.

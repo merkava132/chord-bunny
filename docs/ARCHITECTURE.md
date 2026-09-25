@@ -238,7 +238,7 @@ recordings/<session>/labels.jsonl      written by session_labels: {seg, file, ts
 on in `seg+1` (check it exists with `ts0 == ts1` before joining; a follow-on
 that held only the tail is dropped). `start.sh` puts recordings on
 `/mnt/aegis/chord-bunny/recordings` when that drive exists; the server prunes
-oldest-first past `--max-rec-mb` (3000).
+oldest-first past `--max-rec-mb` (20000; only the WAVs, never the segment index or caches).
 
 ## serve.py
 

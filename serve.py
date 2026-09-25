@@ -2,7 +2,7 @@
 """chord-bunny dev server: static files + a local sink for telemetry and
 mic recordings. Nothing leaves the machine.
 
-  python3 serve.py [--port 8732] [--rec-dir DIR] [--max-rec-mb 3000]
+  python3 serve.py [--port 8732] [--rec-dir DIR] [--max-rec-mb 20000]
 
   POST /api/telemetry?session=ID        body: JSON lines → telemetry/ID.jsonl (appended)
   POST /api/audio?session=ID&seg=N&sr=48000&ts0=..&ts1=..
@@ -31,9 +31,12 @@ def wav_header(n_bytes, sr, channels=1, bits=16):
 
 
 def prune(rec_dir, max_bytes):
+    # Only the audio is pruned (oldest first); segments.jsonl, labels and
+    # tool caches stay so a pruned session still shows what was recorded.
     files = []
     for d, _, names in os.walk(rec_dir):
         for n in names:
+            if not (n.startswith('seg-') and n.endswith('.wav')): continue
             p = os.path.join(d, n)
             try: st = os.stat(p)
             except OSError: continue
@@ -50,7 +53,7 @@ def prune(rec_dir, max_bytes):
 
 class Handler(SimpleHTTPRequestHandler):
     rec_dir = os.path.join(ROOT, 'recordings')
-    max_rec_bytes = 3000 * 10**6
+    max_rec_bytes = 20000 * 10**6
 
     def __init__(self, *a, **k):
         super().__init__(*a, directory=ROOT, **k)
@@ -200,7 +203,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', type=int, default=int(os.environ.get('PORT', 8732)))
     ap.add_argument('--rec-dir', default=os.environ.get('CB_REC_DIR') or Handler.rec_dir)
-    ap.add_argument('--max-rec-mb', type=int, default=int(os.environ.get('CB_MAX_REC_MB', 3000)))
+    # 20 GB: at 3 GB a tab left open with the mic on for an afternoon pruned every earlier practice take (2026-09-25)
+    ap.add_argument('--max-rec-mb', type=int, default=int(os.environ.get('CB_MAX_REC_MB', 20000)))
     a = ap.parse_args()
     Handler.rec_dir = os.path.abspath(a.rec_dir)
     Handler.max_rec_bytes = a.max_rec_mb * 10**6

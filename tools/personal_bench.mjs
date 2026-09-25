@@ -95,6 +95,7 @@ function segFrames(dir, seg) {
   const name = `seg-${String(seg.seg).padStart(4, '0')}`;
   const cacheFile = path.join(dir, 'cache', `${name}.${KEY}.f32`);
   if (fs.existsSync(cacheFile)) { const b = fs.readFileSync(cacheFile); const f = new Float32Array(b.byteLength / 4); new Uint8Array(f.buffer).set(b); return f; }
+  if (!fs.existsSync(path.join(dir, name + '.wav'))) return null;   // pruned by the recorder's size cap
   const wav = decodeWav(fs.readFileSync(path.join(dir, name + '.wav')));
   const an = new PitchAnalyzer({ sampleRate: wav.sampleRate, fftSize: CONFIG.detect.fftSize, profiles: PARTIALS });
   if (an.nP !== NPITCH) throw new Error(`analyzer has ${an.nP} pitches, bench expects ${NPITCH}`);
@@ -116,6 +117,7 @@ function gateFrames(dir, seg) {
   const name = `seg-${String(seg.seg).padStart(4, '0')}`, G = CONFIG.gate;
   const cacheFile = path.join(dir, 'cache', `${name}.${KEY}.gate-r${G.residMax}-s${G.steep}-e${G.ema}.f32`);
   if (fs.existsSync(cacheFile)) { const b = fs.readFileSync(cacheFile); const f = new Float32Array(b.byteLength / 4); new Uint8Array(f.buffer).set(b); return f; }
+  if (!fs.existsSync(path.join(dir, name + '.wav'))) return null;
   const wav = decodeWav(fs.readFileSync(path.join(dir, name + '.wav')));
   const an = new PitchAnalyzer({ sampleRate: wav.sampleRate, fftSize: CONFIG.detect.fftSize, profiles: PARTIALS });
   const gate = new GuitarGate(), rows = [];
@@ -174,7 +176,7 @@ function simulate(fr, T, sens, holdMs, ts0, tgt = null, strums = []) {
 }
 
 // ---- gather intervals ----
-const intervals = [];
+const intervals = []; let pruned = 0;
 for (const sid of sessions) {
   const rows = buildLabels(sid, { telDir: TEL, recDir: REC });
   if (!rows.length) { console.log(`${sid}: no labelled recordings`); continue; }
@@ -198,6 +200,7 @@ for (const sid of sessions) {
     const noise = (SESSIONS_META[sid]?.noise || []).some(([a, b]) => r.ts1 > a && r.ts0 < (b ?? Infinity));
     const seg = segs.find(s => s.seg === r.seg);
     if (!cache.has(r.seg)) cache.set(r.seg, segFrames(dir, seg));
+    if (!cache.get(r.seg)) { pruned++; continue; }   // audio gone
     if (GATE_ON && !gcache.has(r.seg)) gcache.set(r.seg, gateFrames(dir, seg));
     const fr = framesIn(cache.get(r.seg), r.ts0 - WARMUP, r.ts1, GATE_ON ? gcache.get(r.seg) : null);
     const strumTs = strums.filter(ts => ts >= r.ts0 && ts < r.ts1), n = strumTs.length;
@@ -262,6 +265,7 @@ const lines = [];
 lines.push(`personal bench — ${sessions.length} session(s): ${sessions.join(' ')}`);
 lines.push(`partials: ${USER_PARTIALS ? `${upPath} (${Object.keys(USER_PARTIALS.meta?.plucks || {}).length} strings, response ${USER_PARTIALS.response?.n ?? 0} ratios)` : 'GuitarSet only'}`);
 lines.push(`profile: ${PROFILE ? `${profilePath} (alpha ${ALPHA}, ${Object.keys(PROFILE.chords || {}).length} chords)` : 'none'}${args.cfg ? `   cfg: ${args.cfg}` : ''}   knee/floor ${KNEE}/${FLOOR}  decoy ${DECOY}  rule ${RULE}${MODEL ? `   scorer: ${MIX ? `templates + ${MIX}·model` : 'model'} (${MODEL.classes.length} classes, hidden ${MODEL.hidden})` : ''}`);
+if (pruned) lines.push(`${pruned} target intervals skipped: their audio was pruned by the recorder's size cap`);
 lines.push(`${results.length} target intervals, ${played.length} played (≥${MIN_STRUMS} strums, ≥${MIN_DUR}s, sound after the first second)`);
 lines.push(`  live app matched ${pct(summary.liveHit)}   offline: target fired ${pct(summary.hit)}, wrong chord fired first ${pct(summary.wrongFirst)} (${summary.wrongFires} wrong fires), delay p50 ${summary.delayP50?.toFixed(2)}s p90 ${summary.delayP90?.toFixed(2)}s`);
 lines.push(`  player: first strum ${summary.reactionP50?.toFixed(2)}s after the target appears; detector: target fired ${summary.strumDelayP50?.toFixed(2)}s (p90 ${summary.strumDelayP90?.toFixed(2)}s) after that first strum`);

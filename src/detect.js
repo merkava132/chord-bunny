@@ -64,14 +64,14 @@ export function pcSubset(sub, sup) {
 // that only `t` has must carry ≥ minShare of the (mean) chroma `ch`. Without
 // it a strum with no third at all ties A with Am, and a prior decides.
 // Returns null when the fire stands, else the missing pitch class.
-export function missingDistinguisher(ch, t, templates, minShare = CONFIG.stable.thirdMin) {
+export function missingDistinguisher(ch, t, templates, minShare = CONFIG.stable.thirdMin, ratio = CONFIG.stable.thirdRatio) {
   for (const r of templates) {
     if (r === t || r.pcs.length !== t.pcs.length) continue;
     const both = r.mask & t.mask;
     if (popcount(both) !== t.pcs.length - 1) continue;
-    const u = t.mask & ~both;                       // the one pitch class only t has
-    const pc = 31 - Math.clz32(u);
-    if (ch[pc] < minShare) return pc;
+    const pc = 31 - Math.clz32(t.mask & ~both);     // the one pitch class only t has
+    const rpc = 31 - Math.clz32(r.mask & ~both);    // the one only the rival has
+    if (ch[pc] < minShare || (ratio > 0 && ch[pc] < ratio * ch[rpc])) return pc;
   }
   return null;
 }

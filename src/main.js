@@ -386,6 +386,7 @@ function _wireTelemetry(d) {
   let n = 0;
   d.onFrame = (f) => {
     n++;
+    if (f.smoothed && f.confidence >= CONFIG.idle.minConf && f.level >= CONFIG.idle.minLevel) lastActiveAt = performance.now();
     if (n % 500 === 0) {   // ~10 s: detector cost vs its 21 ms budget (monitoring)
       telemetry.log('perf', { msPerFrame: +d.perfMs.toFixed(2), maxMs: +d.perfMax.toFixed(1), budgetMs: +(CONFIG.detect.hop / audioCtx.sampleRate * 1000).toFixed(1) });
       d.perfMax = 0;
@@ -453,8 +454,29 @@ function _attachMicToDetector() {
 }
 
 micStatusEl.addEventListener('click', () => {
-  if (!micStream) enableMic();
+  if (!micStream) enableMic(); else disableMic('user');
 });
+
+// Mic off: stop the tracks, detach the detector, flush the recorder. The
+// modes keep their state and re-wire on the next enableMic().
+function disableMic(reason = 'user') {
+  if (!micStream) return;
+  for (const t of micStream.getTracks()) t.stop();
+  micStream = null; micSource = null;
+  detector?.stop(); detector?.detach();
+  recorder?.stop();
+  if (settings.get('mode') === 'practice') practice?.disable(); else listen?.disable();
+  setMicStatus(null, reason === 'idle' ? `mic off · idle ${CONFIG.idle.minutes} min` : 'mic off');
+  telemetry.log('mic', { state: 'off', reason });
+}
+
+// Idle auto-off (CONFIG.idle): with no confident verdict at playing level
+// for `minutes`, the mic is switched off — a tab left open with the mic on
+// records the room (and once pruned every earlier practice take, 2026-09-25).
+let lastActiveAt = performance.now();
+setInterval(() => {
+  if (micStream && CONFIG.idle.minutes > 0 && performance.now() - lastActiveAt > CONFIG.idle.minutes * 60e3) disableMic('idle');
+}, 30e3);
 
 // First user gesture anywhere = enable mic if user previously had it on
 function firstGestureMicAuto() {
