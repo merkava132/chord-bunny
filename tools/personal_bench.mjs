@@ -19,7 +19,8 @@
 // recomputed every run, exactly as src/detect.js does it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
+import { PitchAnalyzer, frames, rms, mergeUserPartials } from '../src/dsp/analyzer.js';
+import { createHash } from 'node:crypto';
 import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
 import { CONFIG, applyOverrides, sensitivityFromSlider } from '../src/config.js';
@@ -30,14 +31,19 @@ const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('
 if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));
 const TEL = args['tel-dir'] || DEFAULT_TEL, REC = args['rec-dir'] || DEFAULT_REC;
 const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));
-const PARTIALS = JSON.parse(fs.readFileSync(new URL('../data/partials.json', import.meta.url)));
+const BASE_PARTIALS = JSON.parse(fs.readFileSync(new URL('../data/partials.json', import.meta.url)));
+// --user-partials=none|PATH: the calibration-derived table (default: CONFIG.profile.partialsPath when present)
+const upPath = args['user-partials'] === 'none' ? null : (typeof args['user-partials'] === 'string' ? args['user-partials'] : path.resolve(import.meta.dirname, '..', CONFIG.profile.partialsPath));
+const USER_PARTIALS = upPath && CONFIG.profile.userPartials && fs.existsSync(upPath) ? JSON.parse(fs.readFileSync(upPath, 'utf8')) : null;
+const PARTIALS = mergeUserPartials(BASE_PARTIALS, USER_PARTIALS);
+const UP_KEY = USER_PARTIALS ? '.up' + createHash('md5').update(JSON.stringify(PARTIALS)).digest('hex').slice(0, 8) : '';
 const PROGRESSIONS = (() => { try { const p = JSON.parse(fs.readFileSync(new URL('../data/progressions.json', import.meta.url))); return Array.isArray(p) ? p : (p.progressions || []); } catch { return []; } })();
 const MIN_STRUMS = Number(args['min-strums'] ?? 2), MIN_DUR = 1.5, SETTLE = 1.0, WARMUP = 1.0;
 const profilePath = args.profile === 'none' ? null : (args.profile || path.resolve(import.meta.dirname, '..', CONFIG.profile.path));
 const PROFILE = profilePath && fs.existsSync(profilePath) ? JSON.parse(fs.readFileSync(profilePath, 'utf8')) : null;
 const ALPHA = args.alpha !== undefined ? Number(args.alpha) : (PROFILE ? CONFIG.profile.alpha : 0);
 const L = CONFIG.detect.smoothingLen, NEED = Math.ceil(L * 0.6);
-const KEY = `f${CONFIG.detect.fftSize}h${CONFIG.detect.hop}g${CONFIG.detect.rmsGate}.act`;
+const KEY = `f${CONFIG.detect.fftSize}h${CONFIG.detect.hop}g${CONFIG.detect.rmsGate}${UP_KEY}.act`;   // raw activations depend on the partial table
 const PITCHES = []; for (let m = 40; m <= 81; m++) PITCHES.push(m);   // PitchAnalyzer defaults (minMidi..maxMidi)
 const NPITCH = PITCHES.length, ROW = 2 + NPITCH;   // ts, level, act[nP]
 // guitar-likeness gate (src/dsp/gate.js): --gate forces it on, --no-gate off, default CONFIG.gate.enabled; --gate-thr=X overrides the threshold
@@ -238,6 +244,7 @@ const targetRows = [...byTarget].sort((a, b) => b[1].length - a[1].length).map((
 // ---- print ----
 const lines = [];
 lines.push(`personal bench — ${sessions.length} session(s): ${sessions.join(' ')}`);
+lines.push(`partials: ${USER_PARTIALS ? `${upPath} (${Object.keys(USER_PARTIALS.meta?.plucks || {}).length} strings, response ${USER_PARTIALS.response?.n ?? 0} ratios)` : 'GuitarSet only'}`);
 lines.push(`profile: ${PROFILE ? `${profilePath} (alpha ${ALPHA}, ${Object.keys(PROFILE.chords || {}).length} chords)` : 'none'}${args.cfg ? `   cfg: ${args.cfg}` : ''}   knee/floor ${KNEE}/${FLOOR}  decoy ${DECOY}  rule ${RULE}  gate ${GATE_ON ? `on (resid ≤ ${CONFIG.gate.residMax}, thr ${CONFIG.gate.threshold}, ema ${CONFIG.gate.ema})` : 'off'}`);
 lines.push(`${results.length} target intervals, ${played.length} played (≥${MIN_STRUMS} strums, ≥${MIN_DUR}s, sound after the first second)`);
 lines.push(`  live app matched ${pct(summary.liveHit)}   offline: target fired ${pct(summary.hit)}, wrong chord fired first ${pct(summary.wrongFirst)} (${summary.wrongFires} wrong fires), delay p50 ${summary.delayP50?.toFixed(2)}s p90 ${summary.delayP90?.toFixed(2)}s`);

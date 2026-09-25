@@ -11,17 +11,28 @@ import { StringsView } from './strings-ui.js';
 import { Recorder } from './audio/recorder.js';
 import * as telemetry from './telemetry.js';
 import * as progress from './progress.js';
+import { OPEN_MIDI } from './dsp/partials.js';
+import { mergeUserPartials } from './dsp/analyzer.js';
 
 // ?cfg=detect.lam:0.4,listen.showMs:100 — experiment without editing (logged below)
 const CFG_OVERRIDES = applyOverrides(new URLSearchParams(location.search).get('cfg'));
 
-const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING, USER_PROFILE, PROGRESSIONS] = await Promise.all([
+const [ALL_CHORDS, BASE_PARTIALS, BASE_PARTIALS_BY_STRING, USER_PROFILE, PROGRESSIONS, USER_PARTIALS_0] = await Promise.all([
   fetch('data/chords.json').then(r => r.json()),
   fetch('data/partials.json').then(r => r.json()).catch(() => null),
   fetch('data/partials_by_string.json').then(r => r.json()).catch(() => null),
   fetch(CONFIG.profile.path).then(r => r.ok ? r.json() : null).catch(() => null),   // personal profile, optional
   fetch('data/progressions.json').then(r => r.json()).catch(() => []),
+  CONFIG.profile.userPartials ? fetch(CONFIG.profile.partialsPath).then(r => r.ok ? r.json() : null).catch(() => null) : null,   // calibration plucks, optional
 ]);
+// Partial-profile tables the analyzers run with: GuitarSet's, corrected by the
+// calibrated response and with the player's own open strings (CONFIG.profile.userPartials).
+let PROFILES = null, PROFILES_BY_STRING = null;
+function applyUserPartials(user) {
+  PROFILES = mergeUserPartials(BASE_PARTIALS, user);
+  PROFILES_BY_STRING = mergeUserPartials(BASE_PARTIALS_BY_STRING, user, { midiOf: (k) => Number(k.split(':')[1]), overrideKey: (m) => { const s = OPEN_MIDI.indexOf(m); return s < 0 ? null : `${s}:${m}`; } });
+}
+applyUserPartials(USER_PARTIALS_0);
 
 let audioCtx = null;
 let micStream = null;
@@ -144,8 +155,14 @@ profileBtn.addEventListener('click', async () => {
     if (!r.ok) throw new Error(body.error || r.statusText);
     userProfile = await fetch(CONFIG.profile.path + '?t=' + Date.now()).then(x => x.json());
     detector?.setProfile(userProfile);
+    if (CONFIG.profile.userPartials) {   // calibration plucks → partial profiles + response (tools/learn_response.mjs)
+      const up = await fetch(CONFIG.profile.partialsPath + '?t=' + Date.now()).then(x => x.ok ? x.json() : null).catch(() => null);
+      applyUserPartials(up);
+      detector?.setPartials(PROFILES);   // the string tracker picks the new tables up when the mic is next started
+    }
     showProfileStatus(userProfile);
-    telemetry.log('profile', { chords: body.chords, sessions: body.sessions });
+    if (body.summary) profileStatusEl.textContent = body.summary;
+    telemetry.log('profile', { chords: body.chords, sessions: body.sessions, summary: body.summary });
   } catch (err) {
     profileStatusEl.textContent = `could not learn: ${err.message}`;
   } finally { profileBtn.disabled = false; }

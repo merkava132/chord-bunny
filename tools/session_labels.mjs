@@ -17,9 +17,9 @@ export const DEFAULT_TEL = path.resolve(import.meta.dirname, '../telemetry');
 // Build recordings/<session>/labels.jsonl for one session. Returns the rows
 // (empty when the session has no recordings). Pure file I/O, no printing.
 export function buildLabels(session, { telDir = DEFAULT_TEL, recDir = DEFAULT_REC } = {}) {
-  const ev = fs.readFileSync(path.join(telDir, session + '.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const ev = fs.readFileSync(path.join(telDir, session + '.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);   // a live session's last line may be half-written
   const segDir = path.join(recDir, session);
-  const segs = fs.existsSync(path.join(segDir, 'segments.jsonl')) ? fs.readFileSync(path.join(segDir, 'segments.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
+  const segs = fs.existsSync(path.join(segDir, 'segments.jsonl')) ? fs.readFileSync(path.join(segDir, 'segments.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean) : [];   // same: the recorder appends while we read
   if (!segs.length) return [];
   const anchors = ev.filter(e => e.type === 'frame' && e.ts !== undefined).map(e => [e.t, e.ts - e.t]);
   const toTs = (e) => {

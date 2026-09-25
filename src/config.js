@@ -123,8 +123,21 @@ export const CONFIG = {
     // one. Leave-one-out on the first session (77 intervals, basic chords):
     // settled-frame accuracy 56→59%, wrong fires 18→14, median delay
     // 2.21→2.05 s. Absent file → canonical templates, no change.
-    alpha: 0.5,
+    // 2026-09-24: two leave-one-out runs on 7 sessions (408 intervals) put
+    // alpha 0 ahead (settled-frame accuracy 27.6% vs 26.1% at 0.5, fewer
+    // wrong fires) and the personal bench is flat either way, so the chroma
+    // profile is off by default; the file is still learned and reported so
+    // a clean calibration run can flip this. tools/learn_profile.mjs.
+    alpha: 0,
     path: 'data/user/profile.json',
+    // Calibration plucks (settings → calibrate) → tools/learn_response.mjs →
+    // data/user/partials.json: this player's open-string partial profiles and
+    // the mic/guitar frequency response they imply. When present the analyzer's
+    // harmonic dictionary is built from the GuitarSet table corrected by that
+    // response, with the six open strings replaced by the measured profiles
+    // (analyzer.mergeUserPartials). Off → GuitarSet profiles only.
+    userPartials: true,
+    partialsPath: 'data/user/partials.json',
   },
   coach: {
     // Practice hints (src/coach.js). Evaluated only while the target is unmatched.
