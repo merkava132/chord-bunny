@@ -162,7 +162,7 @@ const intervals = [];
 for (const sid of sessions) {
   const rows = buildLabels(sid, { telDir: TEL, recDir: REC });
   if (!rows.length) { console.log(`${sid}: no labelled recordings`); continue; }
-  const ev = fs.readFileSync(path.join(TEL, sid + '.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const ev = fs.readFileSync(path.join(TEL, sid + '.jsonl'), 'utf8').split('\n').filter(Boolean).flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } });   // a live file may end mid-line
   const settings = { ...(ev.find(e => e.type === 'session')?.settings || {}) };
   // settings snapshot at each pair event (setting events arrive in time order)
   const snapAtPair = [];
