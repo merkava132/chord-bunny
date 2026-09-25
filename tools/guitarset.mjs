@@ -25,16 +25,18 @@ export function jamsToAppId(label) {
   return null;
 }
 
-export function listExcerpts(filter = () => true) {
-  return fs.readdirSync(path.join(TESTDATA, 'audio'))
+// `dir` = a directory with audio/ and jams/ (default testdata/; tools/train_model.mjs
+// uses the fuller copy on /mnt/aegis)
+export function listExcerpts(filter = () => true, dir = TESTDATA) {
+  return fs.readdirSync(path.join(dir, 'audio'))
     .filter(f => f.endsWith('.wav') && filter(f))
     .sort()
     .map(f => f.replace('_mic.wav', ''));
 }
 
-export function loadExcerpt(name) {
-  const wav = decodeWav(fs.readFileSync(path.join(TESTDATA, 'audio', `${name}_mic.wav`)));
-  const jams = JSON.parse(fs.readFileSync(path.join(TESTDATA, 'jams', `${name}.jams`)));
+export function loadExcerpt(name, dir = TESTDATA) {
+  const wav = decodeWav(fs.readFileSync(path.join(dir, 'audio', `${name}_mic.wav`)));
+  const jams = JSON.parse(fs.readFileSync(path.join(dir, 'jams', `${name}.jams`)));
   const chordAnn = jams.annotations.filter(a => a.namespace === 'chord');
   // [0] = instructed lead-sheet chords, [1] = performed (with voicing hints)
   const chords = chordAnn[0].data.map(e => ({

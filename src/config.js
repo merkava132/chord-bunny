@@ -51,6 +51,28 @@ export const CONFIG = {
     // beta > 0 switches the per-tone score to the power mean ((ch·|T|)^beta−1)/beta
     // (0.25 ≈ half-way to cosine); measured worse than sizeBonus, kept for experiments
     beta: 0,
+    // Learned frame classifier (src/model.js, weights CONFIG.model.path).
+    //   false   templates only
+    //   'model' the classifier's log-posterior replaces the template score;
+    //           confidence = the winner's posterior (CONFIG.model.confPow)
+    //   'mix'   templates + modelMix · log-posterior pick the chord, the
+    //           templates' own confidence decides whether to speak
+    // Same smoothing / StableRule / decoys / candidate restriction either
+    // way. Evidence and training: tools/train_model.mjs, docs/MODEL.md.
+    // Try it live with ?cfg=detect.model:mix (or :model).
+    model: false,
+    modelMix: 0.1,
+  },
+  model: {
+    path: 'data/model.json',
+    userPath: 'data/user/model.json',   // wins when present (a model trained on this player's takes)
+    // The model's confidence is its posterior p for the winner, mapped to
+    // the template scale as p^confPow so the sensitivity slider keeps its
+    // meaning: p 0.61 / 0.80 / 0.88 ↔ threshold 0.10 / 0.35 / 0.55. Held-out
+    // players 01+03, basic candidates: p ≥ 0.80 gives a verdict on 87% of chord
+    // frames at 98% precision, the templates' 0.35 gives 86% / 97%
+    // (tools/calibrate.mjs --model).
+    confPow: 4.7,
   },
   confidence: {
     // conf = fitWeight·fit + (1−fitWeight)·margin; margin = (best − runner-up)/margin,

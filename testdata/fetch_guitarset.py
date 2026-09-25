@@ -12,7 +12,7 @@ testdata/jams/*.jams.
 string, aligned with the JAMS note annotations) into testdata/hex/ — the raw
 material for tools/note_bank.mjs. Default hex subset: HEX_DEFAULT below.
 """
-import io, json, os, struct, sys, urllib.request, zipfile, zlib
+import io, json, os, struct, sys, time, urllib.request, zipfile, zlib
 
 REC = 'https://zenodo.org/api/records/3371780/files/{}/content'
 AUDIO_ZIP = REC.format('audio_mono-mic.zip')
@@ -25,15 +25,24 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROGRESSIONS = ['SS3-98-C', 'Rock3-148-C', 'Jazz3-150-C', 'Rock1-130-A',
                 'Jazz1-130-D', 'Funk1-97-C', 'Jazz3-150-C']
 
-def http_range(url, start, end):
-    req = urllib.request.Request(url, headers={'Range': f'bytes={start}-{end}'})
-    with urllib.request.urlopen(req) as r:
-        assert r.status == 206, r.status
-        return r.read()
+def http_range(url, start, end, tries=6):
+    # Zenodo answers 502 / drops connections now and then: retry with backoff
+    for attempt in range(tries):
+        try:
+            req = urllib.request.Request(url, headers={'Range': f'bytes={start}-{end}'})
+            with urllib.request.urlopen(req, timeout=90) as r:
+                assert r.status == 206, r.status
+                return r.read()
+        except Exception as e:  # HTTPError, URLError, timeout, short read
+            if attempt == tries - 1:
+                raise
+            wait = 5 * 2 ** attempt
+            print(f'  retry in {wait}s: {e}', file=sys.stderr)
+            time.sleep(wait)
 
 def content_length(url):
     req = urllib.request.Request(url, method='HEAD')
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, timeout=90) as r:
         return int(r.headers['Content-Length'])
 
 def central_directory(url):

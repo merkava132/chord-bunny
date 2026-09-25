@@ -6,6 +6,7 @@
 import { PitchAnalyzer, frames, rms, voicingPitches } from '../src/dsp/analyzer.js';
 import { FFT, hann } from '../src/dsp/fft.js';
 import { buildTemplates, scoreTemplates } from '../src/detect.js';
+import { Featurizer, scoreModel, mixResult, loadModelFile } from '../src/model.js';
 import { APP_CHORDS, listExcerpts, loadExcerpt, chordAt, stringsAt } from './guitarset.mjs';
 import fs from 'node:fs';
 import { CONFIG, applyOverrides } from '../src/config.js';
@@ -28,6 +29,10 @@ const GT = args.gt || 'instructed';        // instructed | performed
 const CAND = args.chords ? new Set(String(args.chords).split(',')) : null;
 const CANDIDATES = CAND ? APP_CHORDS.filter(c => CAND.has(c.category) || CAND.has(c.id)) : APP_CHORDS;
 const PRIOR = Number(args.prior ?? 0);     // subtract from templates outside the 'basic' category
+// --model[=path]: also score with the learned classifier (src/model.js); --players=01,03 restricts to those GuitarSet players
+const MODEL = args.model ? await loadModelFile(new URL(args.model === true ? '../' + CONFIG.model.path : args.model, import.meta.url).pathname) : null;
+if (args.model && !MODEL) { console.error('no model file'); process.exit(1); }
+const PLAYERS = args.players ? new Set(String(args.players).split(',')) : null;
 const PRIORCAT = args.priorcat ? new Set(String(args.priorcat).split(',')) : null;   // …or only from these categories
 
 const PCI = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11, Db: 1, Eb: 3, Gb: 6, Ab: 8, Bb: 10 };
@@ -80,8 +85,13 @@ const RPEN = Number(args.rpen ?? 0.01), RGW = Number(args.rgw ?? 0.5), RMIX = Nu
 const APP_T = buildTemplates(CANDIDATES);
 const APP_IDX = CANDIDATES.map(c => APP_T.findIndex(t => t.ids.includes(c.id)));
 const APP_SCORES = new Array(APP_T.length);
+const MODEL_CLS = MODEL ? APP_T.map(t => MODEL.classOf(t)) : null, MODEL_SCORES = new Array(APP_T.length);
+let FZ = null, modelLogits = null;   // per-excerpt featurizer; logits of the current frame (raw activations, before the EMA)
 const SCORERS = {
   app: (an, act, V, ch) => { scoreTemplates(ch, APP_T, APP_SCORES); return V.map((v, i) => APP_SCORES[APP_IDX[i]] - (APP_T[APP_IDX[i]].ids[0] === v.id ? 0 : 1e-6)); },
+  ...(MODEL ? { model: (an, act, V) => { scoreModel(MODEL, modelLogits, APP_T, MODEL_SCORES, MODEL_CLS); return V.map((v, i) => MODEL_SCORES[APP_IDX[i]] - (APP_T[APP_IDX[i]].ids[0] === v.id ? 0 : 1e-6)); },
+    // templates + β·(model log-posterior): the model as a prior that breaks the templates' ties (--mix=β, default 0.1)
+    mix: (an, act, V, ch) => { const r = mixResult(scoreTemplates(ch, APP_T, APP_SCORES), scoreModel(MODEL, modelLogits, APP_T, MODEL_SCORES, MODEL_CLS), Number(args.mix || CONFIG.detect.modelMix), APP_T, 0); return V.map((v, i) => r.scores[APP_IDX[i]] - (APP_T[APP_IDX[i]].ids[0] === v.id ? 0 : 1e-6)); } } : {}),
   chroma: (an, act, V, ch) => V.map(v => cosine12(ch, v.chromaT)),
   // log-likelihood template: geometric mean of chroma on template notes
   // (a missing note is catastrophic) minus mass outside the template
@@ -142,6 +152,7 @@ function evalExcerpt(name, totals) {
   const old = new OldChroma(ex.sampleRate);
   const N = an.opts.fftSize;
   const smoothAct = new Float32Array(an.nP);
+  if (MODEL) FZ = new Featurizer(an.nP);
   const keys = ['old', ...Object.keys(SCORERS)];
   const hist = Object.fromEntries(keys.map(k => [k, []]));
   const hit = Object.fromEntries(keys.map(k => [k, 0]));
@@ -155,6 +166,7 @@ function evalExcerpt(name, totals) {
     if (level < RMS_GATE) { for (const k in SCORERS) pred[k] = null; }
     else {
       const act = an.analyze(frame);
+      if (MODEL) modelLogits = MODEL.forward(FZ.push(act));
       for (let i = 0; i < an.nP; i++) smoothAct[i] = SMOOTH * smoothAct[i] + (1 - SMOOTH) * act[i];
       const ch = an.chroma(smoothAct);
       let mx = 0; for (const a of smoothAct) mx = Math.max(mx, a);
@@ -186,7 +198,7 @@ function evalExcerpt(name, totals) {
   return { name, n, acc: Object.fromEntries(keys.map(k => [k, n ? hit[k] / n : 0])) };
 }
 
-const names = listExcerpts(f => f.includes('comp') && (SUBSET === 'all' || OPEN.some(s => f.includes(s))));
+const names = listExcerpts(f => f.includes('comp') && (SUBSET === 'all' || OPEN.some(s => f.includes(s))) && (!PLAYERS || PLAYERS.has(f.slice(0, 2))));
 const totals = {};
 const DUMPS = { age: [], conf: new Map(), fam: {} };
 const CAT_OF = new Map(APP_CHORDS.map(c => [c.id, c.category]));

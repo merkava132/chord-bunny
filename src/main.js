@@ -4,6 +4,7 @@
 import * as settings from './settings.js';
 import { CONFIG, applyOverrides, sensitivityFromSlider } from './config.js';
 import { ChordDetector } from './detect.js';
+import { Model } from './model.js';
 import { PracticeMode } from './practice.js';
 import { ListenMode } from './listen.js';
 import { StringTracker } from './dsp/strings.js';
@@ -14,13 +15,19 @@ import * as telemetry from './telemetry.js';
 // ?cfg=detect.lam:0.4,listen.showMs:100 — experiment without editing (logged below)
 const CFG_OVERRIDES = applyOverrides(new URLSearchParams(location.search).get('cfg'));
 
-const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING, USER_PROFILE, PROGRESSIONS] = await Promise.all([
+const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING, USER_PROFILE, PROGRESSIONS, MODEL_JSON] = await Promise.all([
   fetch('data/chords.json').then(r => r.json()),
   fetch('data/partials.json').then(r => r.json()).catch(() => null),
   fetch('data/partials_by_string.json').then(r => r.json()).catch(() => null),
   fetch(CONFIG.profile.path).then(r => r.ok ? r.json() : null).catch(() => null),   // personal profile, optional
   fetch('data/progressions.json').then(r => r.json()).catch(() => []),
+  // learned classifier (CONFIG.detect.model): the player's own model if there is one, else the shipped one
+  CONFIG.detect.model
+    ? fetch(CONFIG.model.userPath).then(r => r.ok ? r.json() : fetch(CONFIG.model.path).then(r => r.ok ? r.json() : null)).catch(() => null)
+    : Promise.resolve(null),
 ]);
+const MODEL = MODEL_JSON ? new Model(MODEL_JSON) : null;
+if (CONFIG.detect.model) console.log(MODEL ? `detector: learned model (${MODEL.classes.length} classes, hidden ${MODEL.hidden}, trained ${MODEL.meta?.trainedAt || '?'})` : 'detector: CONFIG.detect.model is on but no model file loaded — using templates');
 
 let audioCtx = null;
 let micStream = null;
@@ -341,7 +348,7 @@ async function enableMic() {
 }
 
 async function makeDetector() {
-  const d = new ChordDetector({ audioContext: audioCtx, chords: ALL_CHORDS, profiles: PROFILES, profile: USER_PROFILE });
+  const d = new ChordDetector({ audioContext: audioCtx, chords: ALL_CHORDS, profiles: PROFILES, profile: USER_PROFILE, model: MODEL });
   d.setSensitivity(sensFromSlider(settings.get('sensitivity')));
   d.setMinHold(settings.get('minHoldMs'));
   stringTracker = new StringTracker({ sampleRate: audioCtx.sampleRate, profiles: PROFILES, profilesByString: PROFILES_BY_STRING });

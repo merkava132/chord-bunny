@@ -22,6 +22,7 @@ import path from 'node:path';
 import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
 import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
+import { Featurizer, scoreModel, mixResult, loadModelFile } from '../src/model.js';
 import { CONFIG, applyOverrides, sensitivityFromSlider } from '../src/config.js';
 import { buildLabels, DEFAULT_REC, DEFAULT_TEL } from './session_labels.mjs';
 
@@ -43,6 +44,10 @@ const KNEE = Number(args.knee ?? 64), FLOOR = Number(args.floor ?? 0.25);   // c
 const CHROMA_W = Float32Array.from(PITCHES, m => m <= KNEE ? 1 : Math.max(FLOOR, 1 - (1 - FLOOR) * (m - KNEE) / Math.max(1, 81 - KNEE)));
 if (args.decoy !== undefined) applyOverrides(`detect.prior.decoy:${args.decoy}`);   // --decoy=X sweeps CONFIG.detect.prior.decoy
 const DECOY = CONFIG.detect.prior.decoy || 0;
+// --model[=path]: score with the learned classifier (src/model.js) instead of the templates
+const MODEL = args.model ? await loadModelFile(path.resolve(import.meta.dirname, '..', args.model === true ? CONFIG.model.path : String(args.model))) : null;
+if (args.model && !MODEL) { console.error('no model file'); process.exit(1); }
+const MIX = Number(args.mix || 0);   // --mix=β with --model: template score + β·(model log-posterior) instead of the model alone
 // per-session annotations (data/user/sessions.json): { "<session>": { noise: [[ts0, ts1|null], …], note } } — stream-ts ranges of non-guitar audio (TV, talk)
 const SESSIONS_META = (() => { try { return JSON.parse(fs.readFileSync(new URL('../data/user/sessions.json', import.meta.url))); } catch { return {}; } })();
 function fold(sm, out) { out.fill(0); let s = 0; for (let i = 0; i < NPITCH; i++) { const v = sm[i] * CHROMA_W[i]; out[PITCHES[i] % 12] += v; s += v; } if (s > 0) for (let i = 0; i < 12; i++) out[i] /= s; return out; }
@@ -94,12 +99,16 @@ function segFrames(dir, seg) {
 }
 // frames of one segment within [a, b) as objects; the EMA runs over the whole segment (its state survives silent frames, as in the detector)
 function framesIn(f, a, b) {
-  const out = [], sm = new Float32Array(NPITCH), EMA = CONFIG.detect.ema;
+  const out = [], sm = new Float32Array(NPITCH), EMA = CONFIG.detect.ema, fz = MODEL ? new Featurizer(NPITCH) : null;
   for (let i = 0; i < f.length; i += ROW) {
     const ts = f[i], level = f[i + 1], silent = level < CONFIG.detect.rmsGate;
-    if (!silent) for (let k = 0; k < NPITCH; k++) sm[k] = EMA * sm[k] + (1 - EMA) * f[i + 2 + k];
+    let feat = null;
+    if (!silent) {
+      for (let k = 0; k < NPITCH; k++) sm[k] = EMA * sm[k] + (1 - EMA) * f[i + 2 + k];
+      if (fz) feat = Float32Array.from(fz.push(f.subarray(i + 2, i + 2 + NPITCH)));   // raw activations, as the detector feeds the model
+    }
     if (ts < a || ts >= b) continue;
-    out.push({ ts, level, silent, chroma: silent ? null : fold(sm, new Float32Array(12)) });
+    out.push({ ts, level, silent, chroma: silent ? null : fold(sm, new Float32Array(12)), feat });
   }
   return out;
 }
@@ -112,7 +121,11 @@ function simulate(fr, T, sens, holdMs, ts0, tgt = null, strums = []) {
   for (const f of fr) {
     let id = null;
     if (f.silent) { hist.length = 0; rule.push(f.ts, null, true); continue; }
-    const r = scoreTemplates(f.chroma, T);
+    let r;
+    if (MODEL && MIX) {   // as ChordDetector does in 'mix' mode: template confidence, mixed argmax
+      const tpl = scoreTemplates(f.chroma, T), c = tpl.best >= 0 ? confidenceOf(tpl, T) : 0;
+      r = mixResult(tpl, scoreModel(MODEL, MODEL.forward(f.feat), T, new Array(T.length), T.cls), MIX, T, c);
+    } else r = MODEL ? scoreModel(MODEL, MODEL.forward(f.feat), T, new Array(T.length), T.cls) : scoreTemplates(f.chroma, T);
     if (r.best >= 0) {
       const conf = confidenceOf(r, T);
       if (f.ts >= ts0 + SETTLE) diag.push([tgt ? tgt.ids.includes(T[r.best].id) : false, conf, f.level, strums.some(s => f.ts >= s + 0.05 && f.ts < s + 0.5), T[r.best].id]);
@@ -164,7 +177,7 @@ for (const sid of sessions) {
 const templCache = new Map();
 const templatesFor = (cand, enabled = new Set()) => {
   const k = cand.map(c => c.id).join(',') + '|' + [...enabled].join(',');
-  if (!templCache.has(k)) templCache.set(k, buildTemplates(cand, { profile: PROFILE, alpha: ALPHA, decoys: new Set(cand.map(c => c.id).filter(id => !enabled.has(id))) }));
+  if (!templCache.has(k)) { const T = buildTemplates(cand, { profile: PROFILE, alpha: ALPHA, decoys: new Set(cand.map(c => c.id).filter(id => !enabled.has(id))) }); if (MODEL) T.cls = T.map(t => MODEL.classOf(t)); templCache.set(k, T); }
   return templCache.get(k);
 };
 const results = [];
@@ -213,7 +226,7 @@ const targetRows = [...byTarget].sort((a, b) => b[1].length - a[1].length).map((
 // ---- print ----
 const lines = [];
 lines.push(`personal bench — ${sessions.length} session(s): ${sessions.join(' ')}`);
-lines.push(`profile: ${PROFILE ? `${profilePath} (alpha ${ALPHA}, ${Object.keys(PROFILE.chords || {}).length} chords)` : 'none'}${args.cfg ? `   cfg: ${args.cfg}` : ''}   knee/floor ${KNEE}/${FLOOR}  decoy ${DECOY}  rule ${RULE}`);
+lines.push(`profile: ${PROFILE ? `${profilePath} (alpha ${ALPHA}, ${Object.keys(PROFILE.chords || {}).length} chords)` : 'none'}${args.cfg ? `   cfg: ${args.cfg}` : ''}   knee/floor ${KNEE}/${FLOOR}  decoy ${DECOY}  rule ${RULE}${MODEL ? `   scorer: ${MIX ? `templates + ${MIX}·model` : 'model'} (${MODEL.classes.length} classes, hidden ${MODEL.hidden})` : ''}`);
 lines.push(`${results.length} target intervals, ${played.length} played (≥${MIN_STRUMS} strums, ≥${MIN_DUR}s, sound after the first second)`);
 lines.push(`  live app matched ${pct(summary.liveHit)}   offline: target fired ${pct(summary.hit)}, wrong chord fired first ${pct(summary.wrongFirst)} (${summary.wrongFires} wrong fires), delay p50 ${summary.delayP50?.toFixed(2)}s p90 ${summary.delayP90?.toFixed(2)}s`);
 lines.push(`  player: first strum ${summary.reactionP50?.toFixed(2)}s after the target appears; detector: target fired ${summary.strumDelayP50?.toFixed(2)}s (p90 ${summary.strumDelayP90?.toFixed(2)}s) after that first strum`);

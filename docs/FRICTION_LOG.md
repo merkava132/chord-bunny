@@ -284,3 +284,33 @@ fought back. Newest at the bottom.
 - Note for the tools: the `enroll` events from session 2026-09-25T03-14-58
   are not clean ground truth (windows overlap, early advances). Ignore that
   session's enroll events; the user re-ran after the fix.
+
+## 2026-09-24 night — learned classifier (model branch)
+
+- **Killed my own shell three times** with `pkill -f` / `pgrep -f` / `ps | grep`
+  patterns: the pattern text sits in the very command line that runs it, so
+  the kill matches the shell (exit 144, everything after it silently
+  skipped, a background job left in an unknown state). The memory note said
+  so and it still happened, because each fix moved the pattern into a
+  heredoc — which is still part of the command line. What finally worked: a
+  script *file* holding the pattern (`restart.sh` + a pidfile), invoked by
+  path only. Rule: nothing that scans process lists may be typed inline —
+  and a heredoc that *creates* the script file counts as typing it inline
+  (fourth self-kill: `cat > fetch6.sh <<EOF … pgrep … EOF && ./fetch6.sh`
+  in one command). Write the file with the editor tool, run it in a
+  separate command.
+- zsh `noclobber`: `nohup … > fetch.log` refused ("file exists") and the job
+  never started; use `>|`.
+- Zenodo range requests: `urlopen` without a timeout hung forever twice; with
+  a timeout it died on a 502. The fetcher now has timeouts and retry with
+  backoff (both copies).
+- `tools/personal_bench.mjs` reads `telemetry/` and `data/user/` from the
+  checkout it runs in; in a worktree that means `--tel-dir=` and copying
+  `data/user/{profile,sessions}.json` over (gitignored), else the template
+  baseline silently runs without the personal profile and the noise
+  annotation.
+- `pcKey` sorts pitch classes: a test that wrote G as "7,11,2" failed;
+  it is "2,7,11".
+- The synth labels' `file` field is relative to the repo root; a
+  regenerated set on /mnt/aegis needs the `testdata/synth` symlink
+  re-pointed (done in this worktree only).

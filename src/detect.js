@@ -14,6 +14,7 @@
 
 import { PitchAnalyzer, rms } from './dsp/analyzer.js';
 import { captureFrom } from './audio/stream.js';
+import { Featurizer, scoreModel, mixResult } from './model.js';
 
 import { CONFIG } from './config.js';
 
@@ -144,7 +145,8 @@ export function scoreTemplates(ch, templates, out = null) {
 // Confidence in the winner (see CONFIG.confidence): part how well the chroma
 // fits it, part how far the nearest non-nested rival is behind.
 export const CONF = CONFIG.confidence;
-export function confidenceOf({ scores, best, second }, templates) {
+export function confidenceOf({ scores, best, second, conf }, templates) {
+  if (conf !== undefined) return conf;               // model path (scoreModel): the winner's posterior
   const c = CONFIG.confidence, t = templates[best];
   const bestScore = scores[best] + t.prior;          // don't dock a sus chord for its own prior
   const secondScore = second >= 0 ? scores[second] : -Infinity;
@@ -156,11 +158,13 @@ export function confidenceOf({ scores, best, second }, templates) {
 }
 
 export class ChordDetector {
-  constructor({ audioContext, chords, profiles = null, profile = null }) {
+  constructor({ audioContext, chords, profiles = null, profile = null, model = null }) {
     this.ctx = audioContext;
     this.chords = chords;
     this.profile = profile;        // personal chroma profile (CONFIG.profile), optional
+    this.model = model;            // learned classifier (src/model.js), used when CONFIG.detect.model
     this.analyzer = new PitchAnalyzer({ sampleRate: audioContext.sampleRate, fftSize: FFT_SIZE, profiles });
+    this.featurizer = new Featurizer(this.analyzer.nP);
     this.templates = [];
     this.setCandidates(null);
     this.smooth = new Float32Array(this.analyzer.nP);
@@ -212,6 +216,7 @@ export class ChordDetector {
     this.history.length = 0;
     this.stable.reset();
     this.smooth.fill(0);
+    this.featurizer.reset();
     if (this.capture) this.capture.stream.reset();
   }
 
@@ -227,7 +232,9 @@ export class ChordDetector {
     const want = ids ? new Set(ids) : null;
     this.templates = buildTemplates(want ? this.chords.filter(c => want.has(c.id)) : this.chords, { profile: this.profile, alpha: CONFIG.profile.alpha, ...opts });
     this.templateOf = new Map(this.templates.map(t => [t.id, t]));
+    this.classIdx = this.model ? this.templates.map(t => this.model.classOf(t)) : null;   // model class per template
     this.scores = new Array(this.templates.length);
+    this.mscores = new Array(this.templates.length);
     if (this.history) this.history.length = 0;   // (constructor calls this before history exists)
     this.stable?.reset();
   }
@@ -237,6 +244,10 @@ export class ChordDetector {
 
   // Swap the personal profile (after relearning) and rebuild the templates.
   setProfile(profile) { this.profile = profile; this.setCandidates(this.candidateIds, this.candidateOpts || {}); }
+  // Swap the learned classifier (null = templates only).
+  setModel(model) { this.model = model; this.setCandidates(this.candidateIds, this.candidateOpts || {}); }
+  // false | 'model' | 'mix' (CONFIG.detect.model; candidateOpts.model overrides per mode)
+  usesModel() { if (!this.model) return false; const m = this.candidateOpts?.model ?? CONFIG.detect.model; return m === true ? 'model' : m || false; }
 
   // Audio-stream clock (seconds since attach) — the clock recordings are cut on.
   streamTime() { return this.capture ? this.capture.stream.written / this.capture.stream.sr : 0; }
@@ -282,7 +293,15 @@ export class ChordDetector {
     for (let i = 0; i < an.nP; i++) this.smooth[i] = EMA * this.smooth[i] + (1 - EMA) * act[i];
     const ch = an.chroma(this.smooth, this.chroma);
 
-    const result = scoreTemplates(ch, this.templates, this.scores);
+    // scoring step: the templates, the learned classifier, or both (CONFIG.detect.model)
+    const use = this.usesModel();
+    let result;
+    if (use === 'model') result = scoreModel(this.model, this.model.forward(this.featurizer.push(act)), this.templates, this.scores, this.classIdx);
+    else if (use === 'mix') {
+      const tpl = scoreTemplates(ch, this.templates, this.scores), conf = tpl.best >= 0 ? confidenceOf(tpl, this.templates) : 0;
+      const mdl = scoreModel(this.model, this.model.forward(this.featurizer.push(act)), this.templates, this.mscores, this.classIdx);
+      result = mixResult(tpl, mdl, CONFIG.detect.modelMix, this.templates, conf);
+    } else result = scoreTemplates(ch, this.templates, this.scores);
     const { scores, best } = result;
     if (best < 0) return;
     const bestId = this.templates[best].id;
