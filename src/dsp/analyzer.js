@@ -12,6 +12,7 @@
 // sounding. Decomposing onto harmonic templates keeps it.
 
 import { FFT, hann } from './fft.js';
+import { applyResponse } from './partials.js';
 
 export const TUNING = [40, 45, 50, 55, 59, 64];   // E2 A2 D3 G3 B3 E4 (MIDI)
 export const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -273,6 +274,26 @@ export class PitchAnalyzer {
     if (s > 0) for (let i = 0; i < 12; i++) out[i] /= s;
     return out;
   }
+}
+
+// The profile table the analyzer should run with for this player: the
+// GuitarSet table (data/partials.json) with the calibrated frequency
+// response applied to every pitch, and the six open strings replaced by
+// what the player's own plucks measured (data/user/partials.json, written by
+// tools/learn_response.mjs: { "<midi>": [a1, a2, …], meta, response }).
+// For the by-string table ("string:midi" keys) pass midiOf and an
+// overrideKey that only lets a string's own open pitch be replaced.
+export function mergeUserPartials(base, user, { midiOf = (k) => Number(k), overrideKey = (m) => String(m) } = {}) {
+  if (!base) return base;
+  if (!user) return base;
+  const out = user.response ? applyResponse(base, user.response, midiOf) : { ...base };
+  for (const key of Object.keys(user)) {
+    const m = Number(key);
+    if (!Number.isFinite(m) || !Array.isArray(user[key])) continue;   // meta, response
+    const k = overrideKey(m);
+    if (k !== null && k in out) out[k] = user[key];
+  }
+  return out;
 }
 
 export function rms(x, start = 0, end = x.length) {

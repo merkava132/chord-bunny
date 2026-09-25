@@ -284,3 +284,32 @@ fought back. Newest at the bottom.
 - Note for the tools: the `enroll` events from session 2026-09-25T03-14-58
   are not clean ground truth (windows overlap, early advances). Ignore that
   session's enroll events; the user re-ran after the fix.
+
+## 2026-09-25 — learning from the calibration takes (enroll branch)
+
+- The tools read telemetry/*.jsonl and recordings/*/segments.jsonl while the
+  live server is still appending to them: `JSON.parse` on a half-written
+  last line killed `learn_profile.mjs --all` twice (once per file kind). The
+  button runs exactly that path, so both parses now skip unparsable lines.
+  Any tool that maps `JSON.parse` over a live file has the same hole
+  (personal_bench.mjs, telemetry_report.mjs).
+- `__pycache__/serve.cpython-312.pyc` is tracked despite the ignore rule and
+  shows up modified after every `python3 -m py_compile serve.py`; never
+  `git add -A` here.
+- Partial amplitudes peak-picked from a Hann spectrum were 12% low on a
+  synthetic pluck — scalloping loss, not a bug in the pluck: parabolic
+  interpolation on the log magnitude fixed it. Worth remembering for any
+  "measure the line at f" code.
+- The user's smoke-test calibration (buggy counter run) has 5 usable plucks
+  on 4 strings, 1–2 each; pluck-to-pluck partial variance is σ≈1 in the log
+  domain, so the fitted response (rms residual 0.82) is a sketch. The bench
+  with it applied moved nothing (target fired 71→72%, wrong-first 9→9%),
+  which is the honest result for 5 plucks; the machinery is what this branch
+  delivers, the numbers need a real calibration run.
+- The analyzer's profile domain question: GuitarSet profiles (room mic) and
+  the player's plucks (mic jack) are different response domains; the
+  dictionary needs one. Chosen: correct the whole GuitarSet table by the
+  fitted response, then override the six open pitches with the measured
+  profiles (analyzer.mergeUserPartials) — no double counting, no per-pitch
+  response knob in the analyzer, and the by-string table gets the same
+  treatment with an override restricted to each string's own open pitch.

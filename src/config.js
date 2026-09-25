@@ -112,6 +112,14 @@ export const CONFIG = {
     // 2.21→2.05 s. Absent file → canonical templates, no change.
     alpha: 0.5,
     path: 'data/user/profile.json',
+    // Calibration plucks (settings → calibrate) → tools/learn_response.mjs →
+    // data/user/partials.json: this player's open-string partial profiles and
+    // the mic/guitar frequency response they imply. When present the analyzer's
+    // harmonic dictionary is built from the GuitarSet table corrected by that
+    // response, with the six open strings replaced by the measured profiles
+    // (analyzer.mergeUserPartials). Off → GuitarSet profiles only.
+    userPartials: true,
+    partialsPath: 'data/user/partials.json',
   },
   coach: {
     // Practice hints (src/coach.js). Evaluated only while the target is unmatched.

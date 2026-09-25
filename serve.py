@@ -136,8 +136,26 @@ class Handler(SimpleHTTPRequestHandler):
             with open(out) as f: prof = json.load(f)
         except OSError as e:
             return self._reply(500, {'error': f'no profile written: {e}', 'log': r.stdout[-2000:]})
+        # Calibration plucks → open-string partial profiles + frequency response
+        # (tools/learn_response.mjs → data/user/partials.json). Optional: no
+        # plucks yet is not an error, the summary just says so.
+        resp_out = os.path.join(ROOT, 'data', 'user', 'partials.json')
+        resp_cmd = ['node', os.path.join(ROOT, 'tools', 'learn_response.mjs'), '--all', '--write=' + resp_out,
+                    '--rec-dir=' + self.rec_dir, '--tel-dir=' + TELEMETRY_DIR]
+        response = 'response: not learned'
+        try:
+            r2 = subprocess.run(resp_cmd, cwd=ROOT, capture_output=True, text=True, timeout=300)
+            for line in r2.stdout.splitlines():
+                if line.startswith('summary: '): response = line[len('summary: '):]
+            if r2.returncode != 0: response = 'response: failed (' + (r2.stderr or r2.stdout)[-200:].strip() + ')'
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            response = f'response: failed ({e.__class__.__name__})'
+        chords = prof.get('chords', {})
+        summary = (f"profile: {len(chords)} chords from {prof.get('gold', 0)} calibration takes"
+                   f" + {prof.get('practiceMatched', 0)} practice matches; {response}")
         return self._reply(200, {'learnedAt': prof.get('learnedAt'), 'sessions': prof.get('sessions'),
-                                 'chords': {k: v.get('n') for k, v in prof.get('chords', {}).items()}, 'log': r.stdout[-3000:]})
+                                 'chords': {k: v.get('n') for k, v in chords.items()}, 'summary': summary,
+                                 'log': r.stdout[-3000:] + '\n' + (r2.stdout[-1500:] if 'r2' in locals() else '')})
 
 
 def main():

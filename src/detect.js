@@ -237,6 +237,8 @@ export class ChordDetector {
 
   // Swap the personal profile (after relearning) and rebuild the templates.
   setProfile(profile) { this.profile = profile; this.setCandidates(this.candidateIds, this.candidateOpts || {}); }
+  // Swap the partial-profile table (after calibration) and rebuild the harmonic dictionary.
+  setPartials(profiles) { this.analyzer.opts.profiles = profiles; this.analyzer.rebuild(); }
 
   // Audio-stream clock (seconds since attach) — the clock recordings are cut on.
   streamTime() { return this.capture ? this.capture.stream.written / this.capture.stream.sr : 0; }
