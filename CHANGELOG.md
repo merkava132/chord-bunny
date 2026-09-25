@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.2.0 — 2026-09-24 (the "make it awesome" night)
+
+Six parallel branches, each measured before merging.
+
+- **Tempo mode**: metronome with a count-in, the pair advances on the bar,
+  an 8-bar clean/missed strip, BPM creep (+2 after 4 clean bars, −2 after 2
+  missed), and the next four chords of the progression shown under the pair.
+- **Progress + drill weak spots**: `tools/stats.mjs` and `GET /api/stats`
+  turn the telemetry into minutes per day, per-chord match rate and the
+  slowest transitions (settings → progress). Random pairs now lean toward
+  the transitions you match slowly or miss (`CONFIG.smart`).
+- **Muted-string ghosts**: a string muted in the shape counts as struck only
+  when its fundamental is really there (`STRING_DEFAULTS.mutedF0Prom`):
+  613 → 32 false low-E strikes on the player's session, played strings
+  unchanged. The player's input carries no 82 Hz, so the low E is never seen
+  directly on this rig; the app says so instead of guessing.
+- **Guitar-likeness gate** (`CONFIG.gate`): NNLS residual > 0.4 → no
+  verdict. TV/speech verdict frames pass 27%, guitar 97%; cost one target
+  in 420. (The "12 matches on the comedy show" were the player's last minute
+  of practice — the annotation was 65 s early; the TV produced no matches.)
+- **Calibration learning**: `tools/learn_response.mjs` measures your
+  guitar + mic's partial amplitudes per open string and fits a response
+  correction (`data/user/partials.json`); calibration chord takes are gold
+  intervals for `learn_profile.mjs`. The chroma profile is now off by
+  default (`CONFIG.profile.alpha` 0): two leave-one-out runs on 408
+  intervals put the canonical templates ahead.
+- **Learned classifier** (`src/model.js`, `CONFIG.detect.model`, off): a
+  17k-parameter MLP on the NNLS activations, trained in pure JS on all 360
+  GuitarSet excerpts + synth clips + speech. Beats the templates on unseen
+  players (basic 87.1 → 89.8% mixed, open world 74.3 → 85.1% raw) but not on
+  the player's own takes (86 → 75% targets fired), and it learned timbre for
+  the chords it only saw synthesised. docs/MODEL.md; retrain with your
+  calibration takes when there are some.
+- Diagrams: base-fret label no longer clipped; CI runs `npm test` on push;
+  personal benchmark tolerates half-written telemetry.
+
+Personal benchmark (3 sessions, 374 played targets, docs/PERSONAL.md):
+target fired 86%, wrong chord first 10%, time to match p50 2.04 s.
+
 ## v1.1.0 — 2026-09-24
 
 - **My Song (Angel Beats!) complete**: all 24 chords of the tab, nine of them
