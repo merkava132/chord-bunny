@@ -84,3 +84,23 @@ describe('scoreTemplates / confidenceOf', () => {
     assert.equal(r.scores, out); assert.equal(idOf(T, r), 'Em');
   });
 });
+
+describe('decoy prior (practice mode foils)', () => {
+  const four = CHORDS.filter(c => ['Em', 'E', 'G', 'C'].includes(c.id));
+  it('docks only templates made entirely of decoys', () => {
+    const T = buildTemplates(four, { decoys: new Set(['E', 'C']) });
+    const by = (id) => T.find(t => t.ids.includes(id));
+    assert.equal(by('E').prior, CONFIG.detect.prior.decoy);
+    assert.equal(by('C').prior, CONFIG.detect.prior.decoy);
+    assert.equal(by('Em').prior, 0);
+    assert.equal(by('G').prior, 0);
+  });
+  it('breaks an Em/E tie (third missing, equal G and G# leakage) toward the enabled chord', () => {
+    const ch = new Float32Array(12).fill(0.01); ch[4] = 0.42; ch[11] = 0.42; ch[7] = 0.03; ch[8] = 0.03;   // E, B strong; G = G# small
+    const T = buildTemplates(four, { decoys: new Set(['E', 'C']) });
+    assert.ok(T[scoreTemplates(ch, T).best].ids.includes('Em'));
+    const T0 = buildTemplates(four);
+    const s0 = scoreTemplates(ch, T0).scores, e = T0.findIndex(t => t.ids.includes('E')), em = T0.findIndex(t => t.ids.includes('Em'));
+    assert.ok(Math.abs(s0[e] - s0[em]) < 1e-6, 'without the prior it is a tie');
+  });
+});

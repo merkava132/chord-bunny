@@ -130,10 +130,12 @@ export class PracticeMode {
   _syncCandidates() {
     const det = this.getDetector();
     if (!det) return;
-    const ids = new Set(this.getEnabled());
+    const enabled = new Set(this.getEnabled());
+    for (const c of this._sequence() || []) enabled.add(c.id);   // a progression's chords are always in play
+    const ids = new Set(enabled);
     for (const c of this.allChords) if (c.category === 'basic') ids.add(c.id);
-    for (const c of this._sequence() || []) ids.add(c.id);   // a progression's chords are always in play
-    det.setCandidates([...ids]);
+    // un-ticked basic chords stay in play as decoys, docked CONFIG.detect.prior.decoy
+    det.setCandidates([...ids], { decoys: new Set([...ids].filter(id => !enabled.has(id))) });
   }
 
   // settings.sequence changed (select): restart with the new mode

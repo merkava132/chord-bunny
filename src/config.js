@@ -26,7 +26,17 @@ export const CONFIG = {
     // 0.15 gave basic 79→87% with basic+sus candidates on GuitarSet; 0.10
     // keeps 86% there and lifts sus fires on the real-note bench 65→70%
     // (my-song set) and 57→72% (all 53). docs/BENCH.md.
-    prior: { sus: 0.10 },
+    prior: {
+      sus: 0.10,
+      // Un-ticked basic chords stay in play as decoys (a G-shaped fumble must
+      // not match Em), but they also win the ties a missing third leaves open
+      // once harmonic leakage tips them: Em heard as E when the G string is
+      // quiet (E2's 5th partial is G#), Am as A (A2's is C#). Personal bench
+      // on the player's own takes (283 targets, 2026-09-24): 0.3 → wrong
+      // chord fired first 15→11%, delay −0.15 s, target fired unchanged;
+      // 0.4 adds nothing. tools/personal_bench.mjs --decoy=.
+      decoy: 0.30,
+    },
     // Size bonus: + sizeBonus·log|T| per template. The geometric mean compares
     // each tone with an absolute floor, so a 4-note template needs its 7th as
     // loud as the average tone to beat its triad; a full likelihood would

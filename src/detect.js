@@ -72,9 +72,10 @@ function mode(arr) {
 // player's own matched takes by tools/learn_profile.mjs) the weights become
 // (1−alpha)·uniform + alpha·profile for chords that have one — the same
 // scorer, tilted toward what this player's chord actually sounds like.
+// `decoys` (Set of ids) marks chords that are in play only as foils.
 // `sizeBonus` is the closed-world prior toward richer chords
 // (CONFIG.detect.sizeBonus for practice, CONFIG.listen.sizeBonus for listen).
-export function buildTemplates(chords, { profile = null, alpha = 0, sizeBonus = CONFIG.detect.sizeBonus } = {}) {
+export function buildTemplates(chords, { profile = null, alpha = 0, sizeBonus = CONFIG.detect.sizeBonus, decoys = null } = {}) {
   const byKey = new Map();
   const eps = EPS();
   for (const c of chords) {
@@ -93,6 +94,9 @@ export function buildTemplates(chords, { profile = null, alpha = 0, sizeBonus = 
     }
     byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, w, prior: CONFIG.detect.prior[c.category] || 0, bonus: sizeBonus * Math.log(pcs.length), perfect });
   }
+  // decoys: chord ids in play only as foils (practice mode's un-ticked basic
+  // chords). A template made only of decoys is docked CONFIG.detect.prior.decoy.
+  if (decoys) for (const t of byKey.values()) if (t.ids.every(id => decoys.has(id))) t.prior += CONFIG.detect.prior.decoy || 0;
   return [...byKey.values()];
 }
 
