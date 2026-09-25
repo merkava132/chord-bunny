@@ -265,3 +265,28 @@ fought back. Newest at the bottom.
   env, outside the sandbox, `?autostart=1` + fake audio device. Driving the
   UI through `window.__cb.practice` (now exposed like `detector`/`tracker`)
   made the caption and calibration paths reachable without a real mic.
+
+## 2026-09-24 — low-E ghosts (branch `lowe`)
+
+- **`--set k=v` is silently a no-op** in eval_strings / eval_ghosts: the arg
+  parser only reads `--set=k=v` (one token); the two-token form yields
+  `{true: NaN}` and the tool runs with defaults. Cost me one full round of
+  "before/after" numbers that were identical because both were "after".
+  Headers now say `--set=k=v`.
+- The tracker's existing `f0Support` gate never bites: with the 4096-point
+  frames E2 (82 Hz) and A2 (110 Hz) are 2.4 bins apart, so the A string
+  fills the "E2 fundamental" bins, and the learned E2 profile weights the 2nd
+  partial 2.2× the fundamental, so the expected fundamental is tiny. Support
+  was 1.00 at p10 for true strikes *and* ghosts. A separate 8192-point
+  spectrum is needed to see the line at all.
+- First implementation delayed strum resolution to 24 frames so the check
+  window would start at the onset; a later onset replaces a pending one, so
+  strums 60–128 ms apart lost the first one — 25% fewer string-0 strikes on
+  Em/G in the player's session. Resolution is back at onsetWindowMs and the
+  check uses the latest 8192 samples instead (≈30 ms before the onset centre
+  to 145 ms after).
+- The player's rig has no 82 Hz: the open low E calibration pluck has its
+  fundamental 23 dB under its 4th partial and 4 dB *below* the local noise
+  floor (A2: +21 dB, D3: +25 dB). So the low E is only ever "seen" through
+  E3/E4 partials, which the chord also has. No detector fix can recover that;
+  the muted-string check just stops claiming what cannot be seen.
