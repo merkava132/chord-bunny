@@ -139,6 +139,19 @@ export const CONFIG = {
   debug: {
     hz: 8,                // debug panel refresh rate
   },
+  tempo: {
+    // Tempo practice (src/tempo.js): the pair advances on beat 1 of every bar.
+    defaultBpm: 78,       // My Song's tempo on the tab
+    minBpm: 40, maxBpm: 200,
+    countInBars: 1,       // clicks before the first chord
+    lookaheadSec: 0.1,    // clicks are scheduled this far ahead at exact audio times …
+    tickMs: 25,           // … from a timer this often (Chris Wilson's lookahead pattern)
+    clickGain: 0.25,      // ≈ −12 dBFS; accent on beat 1 is a higher pitch
+    historyBars: 8,       // the bar strip
+    // creep: after `cleanRun` bars in a row where the target was detected in
+    // time, +`up` bpm; after `missRun` missed bars in a row, −`down`.
+    creep: { up: 2, down: 2, cleanRun: 4, missRun: 2 },
+  },
   strings: {
     // per-string tracker defaults live in src/dsp/strings.js (STRING_DEFAULTS);
     // they were tuned on GuitarSet note annotations and are not app-level knobs

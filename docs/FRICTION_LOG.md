@@ -284,3 +284,24 @@ fought back. Newest at the bottom.
 - Note for the tools: the `enroll` events from session 2026-09-25T03-14-58
   are not clean ground truth (windows overlap, early advances). Ignore that
   session's enroll events; the user re-ran after the fix.
+
+## 2026-09-24 — tempo mode (branch `tempo`)
+
+- Two clocks: the beat grid runs on `performance.now()` and clicks are
+  translated onto `AudioContext.currentTime` when scheduled (100 ms ahead,
+  25 ms timer). Reason: an AudioContext created outside a user gesture stays
+  suspended and its clock does not move, so a grid on the audio clock would
+  freeze until the next click on the page. With the translation the metronome
+  keeps time silently and the clicks join once the context runs.
+- `Metronome.landed(now)` originally generated beats with `time < now`, so a
+  beat at exactly `now` was handed out one tick late; the fake-clock test
+  caught it (beat at 12.0 missing from `landed(12)`). Generation is inclusive
+  for landed(), exclusive for pending().
+- `pending()` must also hand out beats that `landed()` generated first (too
+  late to click) or the two counters drift apart; the test pins that.
+- Headless driver: `env -i … PATH=/usr/bin:/bin` loses nvm's node — pass
+  node's absolute path and add its dir to PATH. Driver at
+  scratchpad/tempo_shots.mjs (fake mic + CDP), same shape as ui_shots.mjs.
+- The seconds-timer controls are hidden with a CSS class on `#practice`
+  while tempo is on rather than removed, so the STATS branch's index.html
+  edits in the settings area do not collide.
