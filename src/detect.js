@@ -59,6 +59,39 @@ export function pcSubset(sub, sup) {
   return pitchClasses(sub).every(pc => S.has(pc));
 }
 
+// Fire-time check (CONFIG.stable.thirdMin): for the template `t` and every
+// candidate that differs from it by exactly one pitch class, the pitch class
+// that only `t` has must carry ≥ minShare of the (mean) chroma `ch`. Without
+// it a strum with no third at all ties A with Am, and a prior decides.
+// Returns null when the fire stands, else the missing pitch class.
+export function missingDistinguisher(ch, t, templates, minShare = CONFIG.stable.thirdMin) {
+  for (const r of templates) {
+    if (r === t || r.pcs.length !== t.pcs.length) continue;
+    const both = r.mask & t.mask;
+    if (popcount(both) !== t.pcs.length - 1) continue;
+    const u = t.mask & ~both;                       // the one pitch class only t has
+    const pc = 31 - Math.clz32(u);
+    if (ch[pc] < minShare) return pc;
+  }
+  return null;
+}
+function popcount(x) { let n = 0; while (x) { x &= x - 1; n++; } return n; }
+
+// Mean chroma over the last `winSec` seconds of sounding frames (for the
+// distinguishing-note check); silence clears it.
+export class ChromaWindow {
+  constructor(winSec = CONFIG.stable.thirdWinSec) { this.win = winSec; this.q = []; this.mean = new Float32Array(12); }
+  reset() { this.q.length = 0; this.mean.fill(0); }
+  push(t, ch) {
+    const q = this.q; q.push([t, Float32Array.from(ch)]);
+    while (q.length && t - q[0][0] > this.win) q.shift();
+    const m = this.mean; m.fill(0);
+    for (const [, c] of q) for (let i = 0; i < 12; i++) m[i] += c[i];
+    for (let i = 0; i < 12; i++) m[i] /= q.length;
+    return m;
+  }
+}
+
 function mode(arr) {
   const counts = new Map();
   for (const v of arr) counts.set(v, (counts.get(v) || 0) + 1);
@@ -172,6 +205,7 @@ export class ChordDetector {
     this.chroma = new Float32Array(12);
     this.history = [];
     this.stable = new StableRule();
+    this.chromaWin = new ChromaWindow();   // for the distinguishing-note check (CONFIG.stable.thirdMin)
     this.gate = new GuitarGate();   // guitar-likeness (CONFIG.gate)
     this.minHoldMs = CONFIG.stable.minHoldMs;
     this.sensitivity = 0.5;
@@ -217,6 +251,7 @@ export class ChordDetector {
   _reset() {
     this.history.length = 0;
     this.stable.reset();
+    this.chromaWin?.reset();
     this.gate.reset();
     this.smooth.fill(0);
     this.featurizer.reset();
@@ -288,6 +323,7 @@ export class ChordDetector {
     if (level < RMS_GATE) {
       this.history.length = 0;
       this.stable.push(t, null, true);
+      this.chromaWin.reset();
       this.gate.silent();
       if (this.run.id) { if (this.onRun) this.onRun({ id: this.run.id, ts0: +this.run.ts0.toFixed(3), dur: +(t - this.run.ts0).toFixed(3) }); this.run = { id: null, ts0: t }; }
       this._emitUpdate(null, 0, level, t);
@@ -327,7 +363,12 @@ export class ChordDetector {
     this._emitUpdate(smoothed, confidence, level, t);
     if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, peak, clip, scores, t, bestId, smoothed, confidence, gate, templates: this.templates });
 
-    const fired = this.stable.push(t, smoothed);
+    const meanCh = this.chromaWin.push(t, ch);
+    let fired = this.stable.push(t, smoothed);
+    if (fired && missingDistinguisher(meanCh, this.templateOf.get(fired), this.templates) !== null) {
+      this.stable.lastFired = null;   // the distinguishing note is not there: no fire, try again next frame
+      fired = null;
+    }
     if (fired && this.onStable) this.onStable(fired, confidence, this.equivalents(fired));
   }
 

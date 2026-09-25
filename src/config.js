@@ -99,6 +99,15 @@ export const CONFIG = {
     win: 1.4,
     frac: 0.6,
     minHoldMs: 350,       // user setting default
+    // Distinguishing-note check at fire time: a chord fires only if every
+    // pitch class that separates it from a one-note-different candidate (A vs
+    // Am: C# vs C; E vs Em; G vs Gsus4 …) carries ≥ thirdMin of the mean
+    // chroma over the last thirdWinSec. 2026-09-25: the player strummed an A
+    // whose third did not ring (C# 0.00, C 0.01, A 0.47) and the decoy prior
+    // handed the tie to the ticked Am at confidence 0.7. On the player's own
+    // takes (personal bench) the check is measured in the commit message.
+    thirdMin: 0.04,
+    thirdWinSec: 0.5,
   },
   listen: {
     // Show a chord only after it has held showMs; keep it through gaps

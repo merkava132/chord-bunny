@@ -22,7 +22,7 @@ import path from 'node:path';
 import { PitchAnalyzer, frames, rms, mergeUserPartials } from '../src/dsp/analyzer.js';
 import { createHash } from 'node:crypto';
 import { decodeWav } from '../src/dsp/wav.js';
-import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
+import { buildTemplates, scoreTemplates, confidenceOf, StableRule, ChromaWindow, missingDistinguisher } from '../src/detect.js';
 import { Featurizer, scoreModel, mixResult, loadModelFile } from '../src/model.js';
 import { CONFIG, applyOverrides, sensitivityFromSlider } from '../src/config.js';
 import { buildLabels, DEFAULT_REC, DEFAULT_TEL } from './session_labels.mjs';
@@ -56,6 +56,7 @@ const KNEE = Number(args.knee ?? 64), FLOOR = Number(args.floor ?? 0.25);   // c
 const CHROMA_W = Float32Array.from(PITCHES, m => m <= KNEE ? 1 : Math.max(FLOOR, 1 - (1 - FLOOR) * (m - KNEE) / Math.max(1, 81 - KNEE)));
 if (args.decoy !== undefined) applyOverrides(`detect.prior.decoy:${args.decoy}`);   // --decoy=X sweeps CONFIG.detect.prior.decoy
 const DECOY = CONFIG.detect.prior.decoy || 0;
+const THIRD = args.third !== 'none';   // --third=none disables the distinguishing-note check (threshold via --cfg=stable.thirdMin:x)
 // --model[=path]: score with the learned classifier (src/model.js) instead of the templates
 const MODEL = args.model ? await loadModelFile(path.resolve(import.meta.dirname, '..', args.model === true ? CONFIG.model.path : String(args.model))) : null;
 if (args.model && !MODEL) { console.error('no model file'); process.exit(1); }
@@ -146,11 +147,11 @@ function framesIn(f, a, b, gf = null) {
 // ---- the detector's decision chain on a frame list (src/detect.js _frameInner + StableRule) ----
 function mode(arr) { const c = new Map(); for (const v of arr) c.set(v, (c.get(v) || 0) + 1); let bv = null, bc = -1; for (const [k, n] of c) if (n > bc) { bv = k; bc = n; } return { value: bv, count: bc }; }
 function simulate(fr, T, sens, holdMs, ts0, tgt = null, strums = []) {
-  const hist = [], rule = makeRule(holdMs);
+  const hist = [], rule = makeRule(holdMs), cw = new ChromaWindow();
   const fires = [], settled = new Map(), diag = []; let settledN = 0, sound = 0;
   for (const f of fr) {
     let id = null;
-    if (f.silent) { hist.length = 0; rule.push(f.ts, null, true); continue; }
+    if (f.silent) { hist.length = 0; rule.push(f.ts, null, true); cw.reset(); continue; }
     let r;
     if (MODEL && MIX) {   // as ChordDetector does in 'mix' mode: template confidence, mixed argmax
       const tpl = scoreTemplates(f.chroma, T), c = tpl.best >= 0 ? confidenceOf(tpl, T) : 0;
@@ -161,7 +162,9 @@ function simulate(fr, T, sens, holdMs, ts0, tgt = null, strums = []) {
       if (f.ts >= ts0 + SETTLE) diag.push([tgt ? tgt.ids.includes(T[r.best].id) : false, conf, f.level, strums.some(s => f.ts >= s + 0.05 && f.ts < s + 0.5), T[r.best].id]);
       hist.push(conf >= sens && (!GATE_ON || f.gate >= CONFIG.gate.threshold) ? T[r.best].id : null); if (hist.length > L) hist.shift();
       const m = mode(hist); id = m.count >= NEED ? m.value : null;
-      const fired = rule.push(f.ts, id);
+      const meanCh = cw.push(f.ts, f.chroma);
+      let fired = rule.push(f.ts, id);
+      if (fired && THIRD && missingDistinguisher(meanCh, T.find(x => x.id === fired), T) !== null) { rule.lastFired = null; fired = null; }
       if (fired && f.ts >= ts0) fires.push({ ts: f.ts, id: fired });
     }
     if (f.ts >= ts0) sound++;

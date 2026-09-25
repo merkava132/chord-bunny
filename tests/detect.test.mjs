@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { pitchClasses, pcKey, pcSubset, buildTemplates, scoreTemplates, confidenceOf, PC_INDEX } from '../src/detect.js';
+import { pitchClasses, pcKey, pcSubset, buildTemplates, scoreTemplates, confidenceOf, PC_INDEX, missingDistinguisher, ChromaWindow } from '../src/detect.js';
 import { CONFIG } from '../src/config.js';
 
 const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));
@@ -103,5 +103,29 @@ describe('decoy prior (practice mode foils)', () => {
     const T0 = buildTemplates(four);
     const s0 = scoreTemplates(ch, T0).scores, e = T0.findIndex(t => t.ids.includes('E')), em = T0.findIndex(t => t.ids.includes('Em'));
     assert.ok(Math.abs(s0[e] - s0[em]) < 1e-6, 'without the prior it is a tie');
+  });
+});
+
+describe('distinguishing-note check (CONFIG.stable.thirdMin)', () => {
+  const T = buildTemplates(CHORDS.filter(c => ['A', 'Am', 'E', 'Em', 'C', 'G', 'D'].includes(c.id)));
+  const by = (id) => T.find(t => t.ids.includes(id));
+  const chroma = (parts) => { const ch = new Float32Array(12).fill(0.01); for (const [pc, v] of Object.entries(parts)) ch[PC_INDEX[pc]] = v; return ch; };
+  it('a strum with no third at all cannot fire Am (or A)', () => {
+    const ch = chroma({ A: 0.47, E: 0.2 });
+    assert.equal(missingDistinguisher(ch, by('Am'), T), PC_INDEX.C);
+    assert.equal(missingDistinguisher(ch, by('A'), T), PC_INDEX['C#']);
+  });
+  it('with the minor third present Am fires; C (one note from Am and Em) needs its own C and G', () => {
+    assert.equal(missingDistinguisher(chroma({ A: 0.4, C: 0.15, E: 0.2 }), by('Am'), T), null);
+    assert.equal(missingDistinguisher(chroma({ C: 0.3, E: 0.2, G: 0.2 }), by('C'), T), null);
+    assert.equal(missingDistinguisher(chroma({ E: 0.3, G: 0.3, C: 0.02 }), by('C'), T), PC_INDEX.C);
+  });
+  it('ChromaWindow averages the last half second and clears on reset', () => {
+    const w = new ChromaWindow(0.5);
+    w.push(0, chroma({ A: 0.4 })); const m = w.push(0.2, chroma({ A: 0.2 }));
+    assert.ok(Math.abs(m[PC_INDEX.A] - 0.3) < 1e-6);
+    w.push(1.0, chroma({ A: 0.1 }));   // older frames fall out of the window
+    assert.ok(Math.abs(w.mean[PC_INDEX.A] - 0.1) < 1e-6);
+    w.reset(); assert.equal(w.q.length, 0);
   });
 });
