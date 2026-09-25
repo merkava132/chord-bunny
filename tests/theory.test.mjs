@@ -35,3 +35,19 @@ describe('theory.pickNext', () => {
     assert.equal(pickNext(by.C, []), null);
   });
 });
+
+describe('theory.pickNext with a bias (weak-spot drilling)', () => {
+  const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));
+  const by = Object.fromEntries(CHORDS.map(c => [c.id, c]));
+  const pool = ['C', 'G', 'Am', 'F', 'D', 'Em'].map(id => by[id]);
+  const count = (bias, n = 4000) => { const m = {}; let seed = 1; const rng = () => (seed = (seed * 48271) % 2147483647) / 2147483647; for (let i = 0; i < n; i++) { const id = pickNext(by.C, pool, rng, bias).id; m[id] = (m[id] || 0) + 1; } return m; };
+  it('a bias multiplies the relatedness weight, so a weak transition comes up more often', () => {
+    const plain = count(null), biased = count((c) => c.id === 'D' ? 4 : 1);
+    assert.ok(biased.D > 2 * plain.D, `D: ${plain.D} → ${biased.D}`);
+    assert.ok(Math.abs(biased.G / biased.Am - plain.G / plain.Am) < 0.3, 'the others keep their ratio');
+  });
+  it('an unrelated chord stays unrelated however weak the transition', () => {
+    const far = [by.C, by['F#m'], by.G];
+    for (let i = 0; i < 200; i++) assert.notEqual(pickNext(by.C, far, Math.random, (c) => c.id === 'F#m' ? 100 : 1).id, 'F#m');
+  });
+});

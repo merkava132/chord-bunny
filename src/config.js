@@ -132,6 +132,21 @@ export const CONFIG = {
     quietStrums: 4,       // strums seen while (almost) nothing passes the level gate → "very quiet"
     quietSpanSec: 0.3,    // …i.e. the frames above the gate span less than this
   },
+  smart: {
+    // "drill weak spots" (settings.smartPairs): with random pairs, the next
+    // chord's relatedness weight is multiplied by 1 + weight·weakness, where
+    // weakness ∈ [0,1] blends how slow the transition current→candidate has
+    // been (median time to match from fastSec to slowSec) and how often it
+    // was missed, from GET /api/stats. Transitions seen fewer than minN times
+    // get `explore` instead. relatedness 0 stays 0: pairs still make musical
+    // sense. Evidence to come: pair events carry weak:true when the factor
+    // was ≥ 1.5, so their time-to-match can be tracked across sessions.
+    weight: 2,
+    explore: 0.3,
+    fastSec: 1.5,
+    slowSec: 4.5,
+    minN: 2,
+  },
   input: {
     meterDecay: 0.85,     // header level meter fall per update
     loopbackPattern: 'monitor|loopback|hdmi|stereo mix|what u hear',   // device labels that are not a microphone

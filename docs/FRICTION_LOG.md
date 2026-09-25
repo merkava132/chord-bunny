@@ -284,3 +284,21 @@ fought back. Newest at the bottom.
 - Note for the tools: the `enroll` events from session 2026-09-25T03-14-58
   are not clean ground truth (windows overlap, early advances). Ignore that
   session's enroll events; the user re-ran after the fix.
+
+## 2026-09-24 — progress panel + weak-spot drilling (stats branch)
+
+- `data/user/` in .gitignore had the trailing slash again, so a symlink to the
+  live data/user showed up as untracked in the worktree — the same trap as
+  testdata/. Rule is now `data/user`. Worth a lint: no ignore rule for a path
+  that might be symlinked from a worktree should end in `/`.
+- In a worktree `.git` is a file; `.git/info/exclude` does not exist. Use
+  `git rev-parse --git-path info/exclude`.
+- Stats over 60 MB of telemetry take 0.5 s only because parseSession
+  substring-filters lines before JSON.parse — 99% of lines are frame/strum
+  samples. Anything that reads telemetry should do the same.
+- Pair events before the mic is on carry `ts: 0` and timer advances; they are
+  not practice and would have counted as 24 unmatched targets in one session.
+- Headless screenshots: shot.py's bottom-row crop never fired because the
+  footer sticks to the bottom of a 100vh page, so the "wide" shot was 4000 px
+  of background. Shoot at a viewport height close to the content instead, or
+  find content bands by scanning rows (did that for the narrow one).

@@ -451,3 +451,36 @@ footer .version { margin-left: 14px; font-family: var(--mono); opacity: 0.55; }
 
 #sequence-select { font: inherit; background: var(--bg-2); color: var(--fg); border: 1px solid var(--bg-3); border-radius: 8px; padding: 4px 8px; max-width: 260px; }
 .seq-pos { font-family: var(--mono); color: var(--fg-dim); font-size: 0.85rem; }
+
+/* ---- progress panel (settings → progress) ---- */
+.pg-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.pg-status { color: var(--fg-dim); font-size: 0.85rem; }
+.pg-head button { font: inherit; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--bg-3); background: var(--bg-2); color: var(--fg); cursor: pointer; }
+.pg-head button:disabled { opacity: .5; cursor: wait; }
+.pg-empty { color: var(--fg-dim); font-size: 0.9rem; margin: 6px 0; }
+.pg-tiles { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 12px; }
+.pg-tile { display: flex; flex-direction: column; }
+.pg-tile .v { font-size: 1.5rem; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.pg-tile .l { color: var(--fg-dim); font-size: 0.8rem; }
+.pg-row { display: flex; flex-wrap: wrap; gap: 18px 32px; margin-bottom: 12px; }
+.pg-block { min-width: 0; }
+.pg-title { color: var(--fg-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 6px; }
+.pg-days { display: block; max-width: 100%; height: auto; }
+.pg-days .axis { stroke: var(--bg-3); }
+.pg-days .bar { fill: var(--accent); }
+.pg-days .bar.empty { fill: var(--bg-3); }
+.pg-days .lbl { fill: var(--fg-dim); font: 10px var(--mono); }
+.pg-days .val { fill: var(--fg); font: 10px var(--mono); }
+.pg-chords { flex: 1 1 260px; max-width: 420px; }
+.pg-chord { display: grid; grid-template-columns: 5.5em 1fr 7.5em; align-items: center; gap: 8px; margin: 3px 0; font-size: 0.85rem; }
+.pg-chord .id { font-family: var(--mono); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-chord .track { display: block; height: 8px; background: var(--bg-3); border-radius: 4px; overflow: hidden; }
+.pg-chord .fill { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+.pg-chord .fill.low { background: var(--warn); }
+.pg-chord .num { color: var(--fg-dim); font-family: var(--mono); font-size: 0.8rem; white-space: nowrap; text-align: right; }
+.pg-table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.pg-table th { text-align: left; color: var(--fg-dim); font-weight: normal; font-size: 0.78rem; padding: 2px 14px 4px 0; }
+.pg-table td { padding: 2px 14px 2px 0; border-top: 1px solid var(--bg-3); font-family: var(--mono); }
+.pg-table td:first-child { font-family: var(--mono); color: var(--fg); }
+.pg-note { color: var(--fg-dim); font-size: 0.82rem; margin-top: 8px; }
+@media (max-width: 600px) { .pg-chord { grid-template-columns: 4.5em 1fr 6.5em; } .pg-tile .v { font-size: 1.25rem; } }

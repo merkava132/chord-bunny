@@ -64,6 +64,8 @@ export class PracticeMode {
 
     // controls
     root.querySelector('#reroll-btn').addEventListener('click', () => this.rerollPair());
+    root.querySelector('#smart-cb').addEventListener('change', (e) => settings.set('smartPairs', e.target.checked));
+    root.querySelector('#smart-cb').checked = settings.get('smartPairs') !== false;
     root.querySelector('#autoadvance-cb').addEventListener('change', (e) => {
       settings.set('autoAdvance', e.target.checked);
     });
@@ -87,6 +89,7 @@ export class PracticeMode {
 
     this.timerHandle = null;
     this.timerEnd = 0;
+    this.stats = null;                // practice statistics (setStats), for weak-spot drilling
 
     // coach: one hint at a time about the chord you're holding (src/coach.js)
     this.coach = new Coach({
@@ -215,6 +218,32 @@ export class PracticeMode {
     setTimeout(() => this.advance(), 240);
   }
 
+  // ---- weak-spot drilling (CONFIG.smart, settings.smartPairs) ----
+  // Statistics from GET /api/stats (tools/stats.mjs); null until fetched.
+  setStats(stats) { this.stats = stats || null; }
+
+  // weakness ∈ [0,1] of the transition from → to: half how slow it has been,
+  // half how often it was missed; `explore` for transitions barely seen.
+  _weakness(from, to) {
+    const S = CONFIG.smart, x = this.stats?.transitions?.[`${from}→${to}`];
+    if (!x || x.n < S.minN) return S.explore;
+    const slow = x.p50 == null ? 1 : Math.max(0, Math.min(1, (x.p50 - S.fastSec) / (S.slowSec - S.fastSec)));
+    return Math.max(0, Math.min(1, 0.5 * slow + 0.5 * (1 - x.rate)));
+  }
+
+  // bias(candidate) for pickNext, or null when drilling is off / no data yet
+  _bias(cur) {
+    if (!cur || !this.stats?.transitions || settings.get('smartPairs') === false) return null;
+    return (c) => 1 + CONFIG.smart.weight * this._weakness(cur.id, c.id);
+  }
+
+  // telemetry tag for a pair the weakness weight had a real hand in (factor ≥ 1.5)
+  _weakTag(cur, next) {
+    if (!cur || !next || !this._bias(cur)) return {};
+    const w = this._weakness(cur.id, next.id);
+    return 1 + CONFIG.smart.weight * w >= 1.5 ? { weak: true, weakness: +w.toFixed(2) } : {};
+  }
+
   // The selected progression's chord objects, or null for random pairs.
   _sequence() {
     const id = settings.get('sequence');
@@ -247,9 +276,9 @@ export class PracticeMode {
     }
     const a = (fresh || !this.current) ? enabled[Math.floor(Math.random() * enabled.length)] : this.current;
     this.current = a;
-    this.next = pickNext(a, enabled);
+    this.next = pickNext(a, enabled, Math.random, this._bias(a));
     this._render(this.current, this.next);
-    telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', enabled: enabled.length });
+    telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', enabled: enabled.length, ...this._weakTag(a, this.next) });
     this._restartTimer();
     this.hintEl.textContent = settings.get('autoAdvance')
       ? 'play the highlighted chord — it advances when detected'
@@ -271,9 +300,9 @@ export class PracticeMode {
       const enabled = this._enabledList();
       if (enabled.length < 2) return;
       this.current = this.next;
-      this.next = pickNext(this.current, enabled);
+      this.next = pickNext(this.current, enabled, Math.random, this._bias(this.current));
       this._render(this.current, this.next);
-      telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason });
+      telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason, ...this._weakTag(this.current, this.next) });
     }
     this._restartTimer();
     // one keypress of ground truth: a match may have been wrong, a timer
