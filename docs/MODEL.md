@@ -149,7 +149,7 @@ the player's own matched takes.
 Until then: `?cfg=detect.model:mix` to try it, `:model` for the raw
 classifier.
 
-Training: 14 epochs over ~1.3 M frames (stride 1) take ~5 min single-threaded;
+Training: 14 epochs over the 455 k training frames (320 k GuitarSet, 101 k synth, 8 k of the player, 27 k speech; stride 1) take ~5 min single-threaded;
 feature extraction for 3,361 sources takes ~40 s with 14 workers; a
 six-fold CV ~20 min. Model file 145 KB; forward pass 0.02 ms.
 
