@@ -85,6 +85,19 @@ export const CONFIG = {
     // (sus prior 0.10), real-note bench maj7 fires 38%, min7 41%.
     sizeBonus: 0,
   },
+  gate: {
+    // Guitar-likeness gate (src/dsp/gate.js): a frame whose NNLS residual
+    // (energy the harmonic dictionary cannot explain) is high gets no
+    // verdict, so the TV / talking cannot drive the hold rule. Player's own
+    // recordings, verdict frames: residual ≤ 0.4 keeps 97% of guitar frames
+    // and passes 27% of TV frames; tools/personal_bench.mjs --gate/--no-gate
+    // for the effect on matches (docs/PERSONAL.md).
+    enabled: true,
+    residMax: 0.4,        // score 0.5 here
+    steep: 20,            // residual 0.3 → 0.88, 0.5 → 0.12
+    ema: 0.5,             // across sounding frames; reset by silence
+    threshold: 0.5,       // smoothed score below this → no verdict this frame
+  },
   meter: {
     // practice meter: threshold at the midpoint, threshold + span fills it
     span: 0.25,

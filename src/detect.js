@@ -14,6 +14,7 @@
 
 import { PitchAnalyzer, rms } from './dsp/analyzer.js';
 import { captureFrom } from './audio/stream.js';
+import { GuitarGate } from './dsp/gate.js';
 
 import { CONFIG } from './config.js';
 
@@ -167,6 +168,7 @@ export class ChordDetector {
     this.chroma = new Float32Array(12);
     this.history = [];
     this.stable = new StableRule();
+    this.gate = new GuitarGate();   // guitar-likeness (CONFIG.gate)
     this.minHoldMs = CONFIG.stable.minHoldMs;
     this.sensitivity = 0.5;
     this.onUpdate = null;
@@ -211,6 +213,7 @@ export class ChordDetector {
   _reset() {
     this.history.length = 0;
     this.stable.reset();
+    this.gate.reset();
     this.smooth.fill(0);
     if (this.capture) this.capture.stream.reset();
   }
@@ -272,6 +275,7 @@ export class ChordDetector {
     if (level < RMS_GATE) {
       this.history.length = 0;
       this.stable.push(t, null, true);
+      this.gate.silent();
       if (this.run.id) { if (this.onRun) this.onRun({ id: this.run.id, ts0: +this.run.ts0.toFixed(3), dur: +(t - this.run.ts0).toFixed(3) }); this.run = { id: null, ts0: t }; }
       this._emitUpdate(null, 0, level, t);
       if (this.onFrame) this.onFrame({ act: null, chroma: null, level, peak, clip, scores: null, t, templates: this.templates });
@@ -279,6 +283,7 @@ export class ChordDetector {
     }
     const an = this.analyzer;
     const act = an.analyze(frame);
+    const gate = CONFIG.gate.enabled ? this.gate.push(an.residual(act)) : 1;   // guitar-likeness of this frame
     for (let i = 0; i < an.nP; i++) this.smooth[i] = EMA * this.smooth[i] + (1 - EMA) * act[i];
     const ch = an.chroma(this.smooth, this.chroma);
 
@@ -288,7 +293,7 @@ export class ChordDetector {
     const bestId = this.templates[best].id;
     const confidence = confidenceOf(result, this.templates);
 
-    const rawId = confidence >= this.sensitivity ? bestId : null;
+    const rawId = confidence >= this.sensitivity && gate >= CONFIG.gate.threshold ? bestId : null;
     this.history.push(rawId);
     if (this.history.length > SMOOTHING_LEN) this.history.shift();
     const m = mode(this.history);
@@ -299,7 +304,7 @@ export class ChordDetector {
       this.run = { id: smoothed, ts0: t };
     }
     this._emitUpdate(smoothed, confidence, level, t);
-    if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, peak, clip, scores, t, bestId, smoothed, confidence, templates: this.templates });
+    if (this.onFrame) this.onFrame({ act: this.smooth, chroma: ch, level, peak, clip, scores, t, bestId, smoothed, confidence, gate, templates: this.templates });
 
     const fired = this.stable.push(t, smoothed);
     if (fired && this.onStable) this.onStable(fired, confidence, this.equivalents(fired));

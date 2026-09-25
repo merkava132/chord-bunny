@@ -326,3 +326,29 @@ fought back. Newest at the bottom.
   footer sticks to the bottom of a 100vh page, so the "wide" shot was 4000 px
   of background. Shoot at a viewport height close to the content instead, or
   find content bands by scanning rows (did that for the narrow one).
+
+## 2026-09-25 — guitar-likeness gate (branch `gate`)
+
+- **The premise was off by a minute.** "The app matched 12 targets on the
+  comedy show" — all 12 matches sit at stream ts 1089–1145, and the
+  recording there is 100% low-residual frames with 2–5 energy onsets per
+  10 s: the player's last minute of practice. The annotated noise range in
+  data/user/sessions.json (start 1083) begins ~65 s too early; the TV proper
+  starts ≈1150, produced zero matches, and was mostly not even recorded (the
+  recorder keeps a segment only if some frame reaches musicConf). Check the
+  match timestamps against the annotation before building a fix for them.
+- The bench in a worktree finds no sessions: telemetry/ and data/user/ are
+  gitignored and live only in the main checkout. `--tel-dir=…/chord-bunny/
+  telemetry` plus `command cp` of data/user/sessions.json (ignored there
+  too) — and the personal profile is likewise absent, so worktree bench
+  numbers are "profile: none" and not comparable with docs/PERSONAL.md;
+  compare before/after within one checkout only.
+- zsh `noclobber` again: `cat > src/dsp/gate.js` silently kept the old
+  file ("file exists" on stderr, tests failed on the stale version). Write
+  files from python or use `>|`.
+- The logistic fit on strum-aligned frames generalised badly across
+  sessions (98% train → 44% on the noisier session) because the "guitar"
+  label there is polluted: strum events fire in near-silence, and the
+  2026-09-25 session is quieter (+10 dB boost) with the TV possibly on all
+  along. Restricting to frames that actually produce verdicts (conf ≥ 0.35)
+  made the classes clean and the answer simple: residual alone.

@@ -244,6 +244,34 @@ export class PitchAnalyzer {
     return { h, explained: vv > 0 ? 1 - resid / vv : 0 };
   }
 
+  // Fraction of the spectrum's energy the last solve() did NOT explain:
+  // ‖v − W h‖² / ‖v‖² = (‖v‖² − 2 hᵀb + hᵀGh) / ‖v‖², from the cached
+  // projections, so the normal path pays nothing unless asked. Harmonic
+  // sources (a guitar) fit the dictionary; speech, laughter and room noise
+  // leave most of their energy unexplained (src/dsp/gate.js).
+  residual(h = this.act, mag = this.mag) {
+    const nP = this.nP, G = this.G, b = this.b;
+    let vv = 0; for (let k = 0; k < mag.length; k++) vv += mag[k] * mag[k];
+    if (vv <= 0) return 1;
+    let hb = 0, hGh = 0;
+    for (let j = 0; j < nP; j++) {
+      const hj = h[j]; if (hj === 0) continue;
+      hb += hj * b[j];
+      const row = j * nP; let s = 0;
+      for (let k = 0; k < nP; k++) s += G[row + k] * h[k];
+      hGh += hj * s;
+    }
+    return Math.max(0, Math.min(1, (vv - 2 * hb + hGh) / vv));
+  }
+
+  // Spectral flatness of the compressed magnitude (0 = one line, 1 = white):
+  // geometric / arithmetic mean of the power in the analysed band.
+  flatness(mag = this.mag) {
+    let lg = 0, am = 0, n = 0;
+    for (let k = 0; k < mag.length; k++) { const p = mag[k] * mag[k] + 1e-12; lg += Math.log(p); am += p; n++; }
+    return n ? Math.exp(lg / n) / (am / n) : 1;
+  }
+
   // Compute this.b = Wᵀ mag (needed before solveSubset if solve() wasn't called).
   project(mag) {
     for (let j = 0; j < this.nP; j++) {
