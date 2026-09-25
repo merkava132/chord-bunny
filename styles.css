@@ -484,3 +484,57 @@ footer .version { margin-left: 14px; font-family: var(--mono); opacity: 0.55; }
 .pg-table td:first-child { font-family: var(--mono); color: var(--fg); }
 .pg-note { color: var(--fg-dim); font-size: 0.82rem; margin-top: 8px; }
 @media (max-width: 600px) { .pg-chord { grid-template-columns: 4.5em 1fr 6.5em; } .pg-tile .v { font-size: 1.25rem; } }
+/* ---------- tempo mode (src/tempo.js) ---------- */
+#practice.tempo .timer-ctl { display: none; }
+.tempo-controls { display: inline-flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.tempo-controls[hidden] { display: none; }
+.tempo-controls select {
+  background: var(--bg-3); color: var(--fg); border: 1px solid var(--bg-3); border-radius: 6px;
+  padding: 4px 8px; font: inherit; font-size: 0.9rem;
+}
+.tempo-strip {
+  display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap;
+  margin: -10px 0 16px;
+  font-family: var(--mono); font-size: 0.82rem; color: var(--fg-dim);
+}
+.tempo-strip[hidden], .upcoming[hidden] { display: none; }
+.tempo-strip .beats { display: inline-flex; gap: 10px; align-items: center; }
+.tempo-strip .beats .dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--bg-3); transition: background .05s, transform .05s;
+}
+.tempo-strip .beats .dot.on { background: var(--fg); transform: scale(1.15); }
+.tempo-strip .beats .dot.on.accent { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.tempo-strip.count-in .beats .dot.on { background: var(--fg-dim); }
+.tempo-strip .bars { display: inline-flex; gap: 4px; }
+.tempo-strip .bars .bar {
+  width: 16px; height: 8px; border-radius: 3px;
+  background: var(--bg-3); border: 1px solid transparent;
+}
+.tempo-strip .bars .bar[data-state="clean"] { background: var(--accent-2); }
+.tempo-strip .bars .bar[data-state="missed"] { background: var(--warn); }
+.tempo-strip .bars .bar[data-state="unscored"] { background: transparent; border-color: var(--fg-dim); }
+.tempo-strip .tempo-msg { min-width: 8ch; }
+.tempo-strip .tempo-msg.note { color: var(--accent); }
+.chord-card.current.beat { animation: beat .22s ease; }
+@keyframes beat {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.025); }
+  100% { transform: scale(1); }
+}
+.chord-card.current.held { border-color: var(--accent-2); }   /* tempo: detected, waiting for the bar */
+.upcoming {
+  display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+  margin: -6px 0 18px;
+  font-family: var(--mono); font-size: 0.82rem; color: var(--fg-dim);
+}
+.upcoming .lbl { margin-right: 4px; }
+.upcoming .chips { display: inline-flex; gap: 6px; }
+.upcoming .chip {
+  background: var(--bg-2); border-radius: 6px; padding: 3px 9px; color: var(--fg);
+}
+.upcoming .pos { margin-left: 8px; opacity: 0.8; }
+@media (max-width: 600px) {
+  .tempo-strip { gap: 14px; }
+  .upcoming .pos { width: 100%; text-align: center; margin-left: 0; }
+}

@@ -352,3 +352,24 @@ fought back. Newest at the bottom.
   2026-09-25 session is quieter (+10 dB boost) with the TV possibly on all
   along. Restricting to frames that actually produce verdicts (conf ≥ 0.35)
   made the classes clean and the answer simple: residual alone.
+
+## 2026-09-24 — tempo mode (branch `tempo`)
+
+- Two clocks: the beat grid runs on `performance.now()` and clicks are
+  translated onto `AudioContext.currentTime` when scheduled (100 ms ahead,
+  25 ms timer). Reason: an AudioContext created outside a user gesture stays
+  suspended and its clock does not move, so a grid on the audio clock would
+  freeze until the next click on the page. With the translation the metronome
+  keeps time silently and the clicks join once the context runs.
+- `Metronome.landed(now)` originally generated beats with `time < now`, so a
+  beat at exactly `now` was handed out one tick late; the fake-clock test
+  caught it (beat at 12.0 missing from `landed(12)`). Generation is inclusive
+  for landed(), exclusive for pending().
+- `pending()` must also hand out beats that `landed()` generated first (too
+  late to click) or the two counters drift apart; the test pins that.
+- Headless driver: `env -i … PATH=/usr/bin:/bin` loses nvm's node — pass
+  node's absolute path and add its dir to PATH. Driver at
+  scratchpad/tempo_shots.mjs (fake mic + CDP), same shape as ui_shots.mjs.
+- The seconds-timer controls are hidden with a CSS class on `#practice`
+  while tempo is on rather than removed, so the STATS branch's index.html
+  edits in the settings area do not collide.

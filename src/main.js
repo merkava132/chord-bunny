@@ -458,6 +458,7 @@ practice = new PracticeMode({
   progressions: PROGRESSIONS,
   getEnabled: () => settings.get('enabledChords'),
   getDetector: () => detector,
+  getAudioContext: ensureAudioCtx,   // tempo mode clicks (a user gesture reaches this through the tempo toggle)
   onCurrent: (chord) => setVoicing(chord),
   onCalibStatus: (text) => { document.getElementById('calib-status').textContent = text; },
 });

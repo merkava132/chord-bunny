@@ -19,6 +19,10 @@ const DEFAULTS = {
   debug: false,                     // debug panel (also ?debug=1)
   sequence: 'random',               // 'random' pairs, or a progression id from data/progressions.json
   smartPairs: true,                 // random pairs lean toward slow / missed transitions (CONFIG.smart)
+  tempoOn: false,                   // tempo practice: metronome, the pair advances every bar (src/tempo.js)
+  bpm: CONFIG.tempo.defaultBpm,
+  beatsPerChord: 4,
+  creep: true,                      // tempo follows clean / missed bars
 };
 
 const listeners = [];

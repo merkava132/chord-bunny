@@ -11,6 +11,10 @@
 //     chords" (src/enroll.js) records each chord, then each open string, while
 //     it is known for certain → telemetry `enroll`. Both feed
 //     tools/learn_profile.mjs.
+//   - tempo mode (src/tempo.js): a metronome; the pair advances on beat 1 of
+//     every bar instead of on detection / the seconds timer; a bar is clean
+//     when the target was detected before it ended, and the tempo creeps
+//     up or down with clean / missed runs
 
 import { renderInto } from './diagrams.js';
 import { pcSubset, PC_INDEX } from './detect.js';
@@ -20,11 +24,13 @@ import * as telemetry from './telemetry.js';
 import { CONFIG } from './config.js';
 import { Coach } from './coach.js';
 import { Enrollment, buildSteps, OnsetDetector } from './enroll.js';
+import { Metronome, Creep } from './tempo.js';
 
 export class PracticeMode {
-  constructor({ root, allChords, getEnabled, getDetector, onCurrent = null, progressions = [], onCalibStatus = null }) {
+  constructor({ root, allChords, getEnabled, getDetector, getAudioContext = null, onCurrent = null, progressions = [], onCalibStatus = null }) {
     this.root = root;
     this.onCurrent = onCurrent;
+    this.getAudioContext = getAudioContext;   // async → AudioContext, for the metronome clicks
     this.onCalibStatus = onCalibStatus;   // (text) → the status line in the settings "calibrate" panel
     this.allChords = allChords;
     this.getEnabled = getEnabled;
@@ -81,6 +87,7 @@ export class PracticeMode {
     document.addEventListener('keydown', (e) => this._onKey(e));
     root.querySelector('#calib-skip').addEventListener('click', () => this.calib?.skip());
     root.querySelector('#calib-stop').addEventListener('click', () => this.calib?.stop());
+    this._tempoInit();
 
     // initial UI state from settings
     root.querySelector('#autoadvance-cb').checked = settings.get('autoAdvance');
@@ -111,6 +118,7 @@ export class PracticeMode {
   }
 
   enable() {
+    this.root.classList.toggle('tempo', this._tempoOn());
     this.rerollPair(/*fresh*/ true);
     this._restartTimer();
     this._wireDetector();
@@ -142,6 +150,7 @@ export class PracticeMode {
 
   disable() {
     this._clearFeedback();
+    this._tempoStop();
     if (this.calib) { this.calib.abort(); this._endCalibration(null); }
     if (this.timerHandle) clearInterval(this.timerHandle);
     this.timerHandle = null;
@@ -208,6 +217,7 @@ export class PracticeMode {
     telemetry.log('match', { ts: this._ts(), target: this.current.id, heard: ids, sinceShown: +(telemetry.now() - this.shownAt).toFixed(1), advanced: auto });
     this.coach.setMatched(telemetry.now());
     this.matchedThisTarget = true;
+    if (this.tempo) { this.lastMatchIds = ids; this.curEl.classList.add('held'); return; }   // tempo: the bar advances the pair
     if (auto) { this.lastMatchIds = ids; this._matched(); }
   }
 
@@ -257,6 +267,7 @@ export class PracticeMode {
   _seqAt(i) { const seq = this._sequence(); return seq ? seq[((i % seq.length) + seq.length) % seq.length] : null; }
 
   rerollPair(fresh = false) {
+    if (this._tempoOn()) this._tempoRestart();   // a new pair starts with a count-in
     const seq = this._sequence();
     if (seq) {   // restart the progression from the top
       this.seqIndex = 0;
@@ -264,7 +275,7 @@ export class PracticeMode {
       this.next = this._seqAt(1);
       this._render(this.current, this.next);
       this._restartTimer();
-      this.hintEl.textContent = settings.get('autoAdvance') ? 'play the progression — it advances when each chord is detected' : 'play the progression — manual advance only';
+      this.hintEl.textContent = this._tempoOn() ? 'play each chord on the bar — the pair advances with the click' : settings.get('autoAdvance') ? 'play the progression — it advances when each chord is detected' : 'play the progression — manual advance only';
       telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', sequence: settings.get('sequence'), index: 0 });
       return;
     }
@@ -280,14 +291,16 @@ export class PracticeMode {
     this._render(this.current, this.next);
     telemetry.log('pair', { ts: this._ts(), cur: this.current.id, next: this.next?.id, reason: fresh ? 'fresh' : 'reroll', enabled: enabled.length, ...this._weakTag(a, this.next) });
     this._restartTimer();
-    this.hintEl.textContent = settings.get('autoAdvance')
-      ? 'play the highlighted chord — it advances when detected'
+    this.hintEl.textContent = this._tempoOn() ? 'play each chord on the bar — the pair advances with the click'
+      : settings.get('autoAdvance') ? 'play the highlighted chord — it advances when detected'
       : 'play freely — manual advance only';
   }
 
-  advance() {
-    const timedOut = settings.get('timerEnabled') && performance.now() >= this.timerEnd;
-    const reason = timedOut ? 'timer' : 'advance';
+  // reason: null (detected / manual / the seconds timer decides), or 'bar' from tempo mode
+  advance(reason = null) {
+    const timedOut = !reason && settings.get('timerEnabled') && performance.now() >= this.timerEnd;
+    if (!reason) reason = timedOut ? 'timer' : 'advance';
+    const byTime = timedOut || reason === 'bar';
     const prev = this.current, prevTs = this.shownTs, heard = this.lastMatchIds, wasMatched = this.matchedThisTarget;
     this.lastMatchIds = null;
     if (this._sequence()) {
@@ -307,8 +320,8 @@ export class PracticeMode {
     this._restartTimer();
     // one keypress of ground truth: a match may have been wrong, a timer
     // advance may have missed a chord that was being played
-    if (prev && !timedOut && heard) this._offerFeedback(prev, 'fp', heard, prevTs);
-    else if (prev && timedOut && !wasMatched && this.getDetector()?.running) this._offerFeedback(prev, 'fn', null, prevTs);   // nothing to report with the mic off
+    if (prev && heard && (!timedOut || reason === 'bar')) this._offerFeedback(prev, 'fp', heard, prevTs);
+    else if (prev && byTime && !wasMatched && this.getDetector()?.running) this._offerFeedback(prev, 'fn', null, prevTs);   // nothing to report with the mic off
   }
 
   // ---- ground truth from the player: one keypress after an advance ----
@@ -368,6 +381,7 @@ export class PracticeMode {
     if (this.timerHandle) clearInterval(this.timerHandle);
     this.timerHandle = null;
     this.timerEl.hidden = true;
+    this._tempoStop();   // _endCalibration → rerollPair brings it back
     this.root.classList.add('calibrating');
     this.calibBar.hidden = false;
     this.calibOnsets = new OnsetDetector();
@@ -426,9 +440,11 @@ export class PracticeMode {
     this.coach.setTarget(cur, this.shownAt);
     const seq = this._sequence();
     if (this.seqPosEl) {
-      this.seqPosEl.hidden = !seq;
+      this.seqPosEl.hidden = !seq || !!this.upcomingEl;   // the position moved to the "then" strip under the pair
       if (seq) this.seqPosEl.textContent = `${(this.seqIndex % seq.length) + 1} / ${seq.length}`;
     }
+    this._renderUpcoming(seq);
+    this.curEl.classList.remove('held');
     this.curName.textContent  = cur  ? cur.name  : '—';
     this.nextName.textContent = next ? next.name : '—';
     this.curMeta.textContent  = cur  ? cur.fullName : '';
@@ -450,7 +466,7 @@ export class PracticeMode {
   _restartTimer() {
     if (this.timerHandle) clearInterval(this.timerHandle);
     this.timerHandle = null;
-    if (!settings.get('timerEnabled')) {
+    if (!settings.get('timerEnabled') || this._tempoOn()) {   // tempo mode: the bar advances, not the clock
       this.timerEl.hidden = true;
       return;
     }
@@ -466,4 +482,180 @@ export class PracticeMode {
     tick();
     this.timerHandle = setInterval(tick, 250);
   }
+
+  // ==================== tempo mode (src/tempo.js) ====================
+  // Settings: tempoOn, bpm, beatsPerChord, creep. While on: the seconds timer
+  // is off, a match marks the current card (green border) instead of
+  // advancing, and beat 1 of each bar scores the bar that just ended, creeps
+  // the tempo, and advances the pair. Bars are unscored while the mic is off.
+  // Telemetry: `tempo` { ts, bpm, beatsPerChord, bar, target, clean } per bar,
+  // `tempo-change` { ts, from, bpm, reason } on a creep step.
+  _tempoInit() {
+    const r = this.root;
+    this.tempoCb = r.querySelector('#tempo-cb');
+    this.tempoCtl = r.querySelector('#tempo-controls');
+    this.bpmInput = r.querySelector('#tempo-bpm');
+    this.beatsSel = r.querySelector('#tempo-beats');
+    this.creepCb = r.querySelector('#tempo-creep');
+    this.tempoStrip = r.querySelector('#tempo-strip');
+    this.beatDots = r.querySelector('#beat-dots');
+    this.barHist = r.querySelector('#bar-history');
+    this.tempoMsg = r.querySelector('#tempo-msg');
+    this.upcomingEl = r.querySelector('#upcoming');
+    this.upcomingChips = r.querySelector('#upcoming-chips');
+    this.upcomingPos = r.querySelector('#upcoming-pos');
+    this.tempo = null;             // { metro, bar, ctx, handle, noteTimer } while running
+    this.creep = new Creep();      // history + runs live across restarts (a new pair keeps the strip)
+    const T = CONFIG.tempo;
+    this.tempoCb.checked = this._tempoOn();
+    this.tempoCtl.hidden = !this._tempoOn();
+    this.bpmInput.value = this._bpm();
+    this.beatsSel.value = String(settings.get('beatsPerChord') || 4);
+    this.creepCb.checked = settings.get('creep') !== false;
+    this.tempoCb.addEventListener('change', (e) => {
+      settings.set('tempoOn', e.target.checked);
+      this.tempoCtl.hidden = !e.target.checked;
+      this.root.classList.toggle('tempo', e.target.checked);
+      if (e.target.checked) this._tempoRestart(); else this._tempoStop();
+      this._restartTimer();
+      this.hintEl.textContent = e.target.checked ? 'play each chord on the bar — the pair advances with the click'
+        : settings.get('autoAdvance') ? 'play the highlighted chord — it advances when detected' : 'play freely — manual advance only';
+    });
+    this.bpmInput.addEventListener('change', (e) => {
+      const v = Math.max(T.minBpm, Math.min(T.maxBpm, Number(e.target.value) || T.defaultBpm));
+      e.target.value = v; settings.set('bpm', v);
+      this.tempo?.metro.setBpm(v);
+    });
+    this.beatsSel.addEventListener('change', (e) => {
+      settings.set('beatsPerChord', Number(e.target.value) || 4);
+      if (this.tempo) this._tempoRestart();
+    });
+    this.creepCb.addEventListener('change', (e) => { settings.set('creep', e.target.checked); this.creep.resetRuns(); });
+  }
+
+  _tempoOn() { return !!settings.get('tempoOn'); }
+  _bpm() { const T = CONFIG.tempo; return Math.max(T.minBpm, Math.min(T.maxBpm, Number(settings.get('bpm')) || T.defaultBpm)); }
+
+  // (Re)start the grid with a count-in. The grid runs on performance.now();
+  // clicks are translated onto the AudioContext clock when scheduled.
+  _tempoRestart() {
+    this._tempoStop();
+    const metro = new Metronome({ bpm: this._bpm(), beatsPerBar: Number(settings.get('beatsPerChord')) || 4 });
+    const t = this.tempo = { metro, bar: null, ctx: null, handle: null, noteTimer: null };
+    metro.start(performance.now() / 1000 + 0.25);
+    this.creep.resetRuns();
+    this.beatDots.replaceChildren(...Array.from({ length: metro.beatsPerBar }, () => { const d = document.createElement('span'); d.className = 'dot'; return d; }));
+    this._renderBars();
+    this.tempoStrip.hidden = false;
+    this.tempoStrip.classList.add('count-in');
+    this.tempoMsg.textContent = 'count-in';
+    this.root.classList.add('tempo');
+    t.handle = setInterval(() => this._tempoTick(), CONFIG.tempo.tickMs);
+    this.getAudioContext?.().then(ctx => { if (this.tempo === t) t.ctx = ctx; }).catch(() => {});
+  }
+
+  _tempoStop() {
+    const t = this.tempo;
+    if (!t) return;
+    clearInterval(t.handle); clearTimeout(t.noteTimer);
+    t.metro.stop();
+    this.tempo = null;
+    this.tempoStrip.hidden = true;
+    this.tempoStrip.classList.remove('count-in');
+    this.curEl.classList.remove('beat', 'held');
+    if (!this._tempoOn()) this.root.classList.remove('tempo');
+  }
+
+  _tempoTick() {
+    const t = this.tempo;
+    if (!t) return;
+    const now = performance.now() / 1000;
+    for (const b of t.metro.pending(now)) this._click(b, now);
+    for (const b of t.metro.landed(now)) {
+      this._showBeat(b);
+      if (b.beat !== 0) continue;
+      if (!b.countIn) {
+        if (t.bar !== null) this._barEnd(t.bar);   // the previous bar just ended → score, creep, advance
+        if (!this.tempo) return;                   // advance() may have restarted or stopped the tempo
+        this.tempo.bar = b.bar;
+      }
+      this.curEl.classList.remove('beat'); void this.curEl.offsetWidth; this.curEl.classList.add('beat');
+    }
+  }
+
+  _showBeat(b) {
+    const dots = this.beatDots.children;
+    for (let i = 0; i < dots.length; i++) { dots[i].classList.toggle('on', i === b.beat); dots[i].classList.toggle('accent', i === 0 && b.beat === 0); }
+    this.tempoStrip.classList.toggle('count-in', b.countIn);
+    if (!this.tempoMsg.classList.contains('note')) this.tempoMsg.textContent = b.countIn ? 'count-in' : (this.getDetector()?.running ? '' : 'unscored — mic off');
+  }
+
+  // Beat 1 landed: the bar `bar` is over. clean = the target was detected in it
+  // (null while the mic is off), then the creep step, then the pair advances.
+  _barEnd(bar) {
+    const t = this.tempo, T = CONFIG.tempo;
+    const scored = !!this.getDetector()?.running;
+    const clean = this.current ? (scored ? this.matchedThisTarget : null) : null;
+    telemetry.log('tempo', { ts: this._ts(), bpm: t.metro.bpm, beatsPerChord: t.metro.beatsPerBar, bar, target: this.current?.id ?? null, clean });
+    const delta = this.creep.record(clean);
+    if (delta && settings.get('creep') !== false) {
+      const from = t.metro.bpm, bpm = this.creep.apply(from, delta);
+      if (bpm !== from) {
+        t.metro.setBpm(bpm); settings.set('bpm', bpm); this.bpmInput.value = bpm;
+        telemetry.log('tempo-change', { ts: this._ts(), from, bpm, reason: delta > 0 ? 'clean-run' : 'miss-run' });
+        this._tempoNote(`${delta > 0 ? '▲' : '▼'} ${bpm} bpm`);
+      }
+    }
+    this._renderBars();
+    if (this.current) this.advance('bar');
+  }
+
+  _renderBars() {
+    const n = CONFIG.tempo.historyBars, h = this.creep.history;
+    const cells = [];
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('span'); c.className = 'bar';
+      const v = h[h.length - n + i];
+      if (v !== undefined) c.dataset.state = v === null ? 'unscored' : v ? 'clean' : 'missed';
+      cells.push(c);
+    }
+    this.barHist.replaceChildren(...cells);
+  }
+
+  _tempoNote(text) {
+    const t = this.tempo; if (!t) return;
+    clearTimeout(t.noteTimer);
+    this.tempoMsg.textContent = text; this.tempoMsg.classList.add('note');
+    t.noteTimer = setTimeout(() => { this.tempoMsg.classList.remove('note'); this.tempoMsg.textContent = ''; }, 2500);
+  }
+
+  // A short sine burst at an exact audio time; beat 1 is higher. Nothing
+  // sounds until the AudioContext is running (the toggle is a user gesture).
+  _click(b, now) {
+    const ctx = this.tempo?.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const at = ctx.currentTime + Math.max(0, b.time - now);
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = b.beat === 0 ? 1568 : 1046;   // G6 / C6
+    g.gain.setValueAtTime(CONFIG.tempo.clickGain * (b.countIn ? 0.6 : 1), at);
+    g.gain.exponentialRampToValueAtTime(0.001, at + 0.045);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(at); osc.stop(at + 0.06);
+  }
+
+  // Following a progression: the chords after "next", and the position.
+  _renderUpcoming(seq) {
+    const show = !!seq && !this.calib;
+    this.upcomingEl.hidden = !show;
+    if (!show) return;
+    const n = seq.length, i = ((this.seqIndex % n) + n) % n;
+    const chips = [];
+    for (let k = 2; k <= 5 && k < n; k++) {
+      const c = document.createElement('span'); c.className = 'chip'; c.textContent = seq[(i + k) % n].name; chips.push(c);
+    }
+    this.upcomingChips.replaceChildren(...chips);
+    this.upcomingPos.textContent = `${i + 1} / ${n}`;
+  }
+  // ==================== end tempo mode ====================
 }
