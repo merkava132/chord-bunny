@@ -29,7 +29,7 @@ Three ways to use it, `CONFIG.detect.model`:
 |---|---|---|
 | `false` | template argmax | template confidence ≥ threshold |
 | `'model'` | model argmax among the candidates + none | posterior^4.7 ≥ threshold (`CONFIG.model.confPow`, see below) |
-| `'mix'` | argmax of template score + 0.1 · model log-posterior | template confidence ≥ threshold (unchanged) |
+| `'mix'` | argmax of template score + 0.1 · model log-posterior (shared inside a nest and between a sus chord and its triads) | template confidence ≥ threshold (unchanged) |
 
 Everything downstream is shared: the candidate restriction of practice
 mode (the model's softmax runs over the candidates and none only), the decoy
@@ -60,10 +60,98 @@ clip built from that player's notes leave the training set together.
 
 ## Results
 
-(numbers below are filled in by the run recorded in docs/model_cv.json and
-the personal bench; see the commit message for the run that produced them)
+### GuitarSet, leave-one-player-out (docs/model_cv.json, 2026-09-25)
 
-RESULTS_PLACEHOLDER
+Same 15,696 chord frames as docs/BENCH.md (open subset: SS3 / Rock3 / Rock1,
+≥ 3 strings ringing), each player scored by a model that never saw that
+player's excerpts or notes. "mix" is the shipped `'mix'` mode (β 0.1, nest-
+and sus-aware).
+
+| | templates | model | mix |
+|---|---|---|---|
+| basic candidates (practice default), instructed labels | 87.1% | 89.0% | **89.8%** |
+| all candidates (listen mode, open world) | 74.3% | **85.1%** | 77.0% |
+
+Per player, basic / all: 00 87.6 / 72.4 → mix 91.9 / 76.2 · 01 95.8 / 86.3 →
+94.9 / 85.9 · 02 77.7 / 62.0 → 81.7 / 66.0 · 03 92.3 / 78.3 → 94.5 / 81.1 ·
+04 79.6 / 71.8 → 82.1 / 72.4 · 05 89.0 / 76.7 → 91.9 / 80.9.
+
+Extended chords, all 42 files, performed labels, basic + maj7 + min7 + 7th
+candidates, recall by family of the played chord:
+
+| family | n | templates | model | mix |
+|---|---|---|---|---|
+| basic | 17208 | 71% | 88% | 73% |
+| seventh | 1666 | 51% | 34% | 52% |
+| maj7 | 1080 | 37% | 26% | 40% |
+| minor7 | 510 | 42% | 8% | 44% |
+| sus | 427 | 0% | 0% | 0% |
+
+The model alone is biased toward plain triads on GuitarSet's jazz voicings:
+it has seen most 7ths and every sus chord only as synthetic hex-pickup
+clips, and learned the timbre along with the chord. A plain mix (model term
+per template) inherited that: minor7 42 → 13%, and on the synthetic bench
+sus fire rate 53 → 17%. The shipped mix therefore shares the model term
+inside a nest (C · Cmaj7 · Cadd9) and between a sus chord and its same-root
+triads (A · Asus2 · Asus4): the model decides root and family (C vs Am vs
+Em, E vs Em), the templates decide the extension and the suspension. That
+gives up most of the open-world gain (86.8 → 77.0%) to keep every family at
+or above the templates.
+
+### The player's own takes (session ho9k, 2026-09-24, 206 played targets)
+
+The model that ships was trained on players 00 / 02 / 04 / 05, the synth
+clips, session zd8g (×5) and ten minutes of speech; ho9k is untouched.
+
+| | templates (+ personal profile) | model | mix |
+|---|---|---|---|
+| target fired | **88%** | 74% | **88%** |
+| wrong chord fired first | **10%** | 10% | 11% |
+| time to match p50 / p90 | 2.04 / 4.17 s | 2.15 / 4.32 s | 2.04 / 4.01 s |
+| settled frames, target is argmax | 42% | 40% | 43% |
+| strum-aligned frames, target is argmax | 44% | 42% | 45% |
+| fires on 10 min of TV speech (23 intervals) | 0 | 0 | 0 |
+
+### Synthetic bench, clips containing notes of the held-out players (331 clips)
+
+Hex-pickup timbre, so partly out of domain for the app; the templates on the
+same clips for reference. Fire rate within 1 s / wrong fire, "my song"
+candidate set: basic 77 / 17% (templates) vs 74 / 17% (mix); sus 53 / 42%
+vs 28 / 56%. basic + 7ths: basic 57 / 17% vs 63 / 20%, maj7 89 / 0% vs
+89 / 0%.
+
+### Confidence (players 01 + 03, basic candidates, tools/calibrate.mjs --model)
+
+| threshold on p^4.7 | coverage of chord frames | precision |
+|---|---|---|
+| 0.20 | 87% | 98% |
+| 0.35 (slider default) | 83% | 98% |
+| 0.60 | 75% | 99% |
+
+Templates at 0.35: 86% / 97%.
+
+## Verdict
+
+Off by default. On real microphone audio it has never seen (six GuitarSet
+players, cross-validated) the mix beats the templates on every metric —
++2.7 points with the practice candidate set, +2.7 in the open world, every
+7th family up — and the model alone is a much better open-world classifier
+(+10.8). But on the player's own practice takes it is a wash (88% → 88% of
+targets fired, one more wrong fire in 206), and on the chord families it
+only knows from synthetic clips it is worse: sus chords, which this player
+practises, fire half as often on the synthetic bench. "Wins clearly" has to
+include the player and the sus set, and it does not yet. What would change
+that: real recordings of sus and 7th chords (the calibrate step in settings
+records exactly those — a model trained with them is
+`node tools/train_model.mjs extract --sessions=<ids>` then
+`train --write=data/user/model.json`, picked up automatically), and more of
+the player's own matched takes.
+Until then: `?cfg=detect.model:mix` to try it, `:model` for the raw
+classifier.
+
+Training: 14 epochs over ~1.3 M frames (stride 1) take ~5 min single-threaded;
+feature extraction for 3,361 sources takes ~40 s with 14 workers; a
+six-fold CV ~20 min. Model file 145 KB; forward pass 0.02 ms.
 
 ## How to retrain
 
@@ -71,7 +159,7 @@ RESULTS_PLACEHOLDER
 npm run model:extract      # features → /mnt/aegis/chord-bunny/features (seconds, 12 workers)
 npm run model:cv           # leave-one-player-out, templates vs model, docs/model_cv.json
 npm run model:train        # data/model.json (hold-out 01,03 by default; --holdout= to change)
-node tools/train_model.mjs train --sessions=<id> --write=data/user/model.json   # a model that has seen this player
+node tools/train_model.mjs extract --sessions=<id> && node tools/train_model.mjs train --user-weight=5 --write=data/user/model.json   # a model that has seen this player
 ```
 
 `tools/eval_chords.mjs --model`, `tools/calibrate.mjs --model` and

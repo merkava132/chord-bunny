@@ -126,9 +126,18 @@ export function scoreModel(model, logits, templates, scores, classIdx) {
 // 0.1: basic candidates 93.8 → 94.5%, all candidates 81.8 → 93.9%; on the
 // player's own takes the verdict rate is exactly the templates' (no extra
 // fires on TV noise, which the mixed scores would otherwise cause).
+// Templates that are nested (Am ⊂ Am7, C ⊂ Cmaj7) or that are a sus chord and
+// its same-root major/minor (A · Asus4 · Asus2) share the model term — the max
+// log-posterior over the group — so the model never decides between a triad
+// and its extension or its suspension: that stays with the templates' size
+// bonus, the sus prior and the note evidence. The model has seen most 7ths
+// and every sus chord only as synthetic clips: left alone it pulled
+// GuitarSet minor7 recall from 42% to 13% and the synth-bench sus fire rate
+// from 53% to 17%. What it keeps: root and family (C vs Am vs Em, E vs Em).
 export function mixResult(tpl, mdl, beta, templates, conf) {
   const n = templates.length, scores = tpl.scores;
-  for (let i = 0; i < n; i++) scores[i] += beta * Math.max(-12, mdl.scores[i] + templates[i].prior);
+  const term = mixTerm(mdl.scores, templates);
+  for (let i = 0; i < n; i++) scores[i] += beta * term[i];
   let best = -1;
   for (let i = 0; i < n; i++) if (best < 0 || scores[i] > scores[best]) best = i;
   let second = -1;
@@ -143,6 +152,35 @@ export function mixResult(tpl, mdl, beta, templates, conf) {
   }
   tpl.best = best; tpl.second = second; tpl.conf = conf;
   return tpl;
+}
+
+// A sus chord: root and fifth with a 2nd or 4th and no third (Asus2, Dsus4, A7sus4 …).
+const isSus = (t) => { const r = t.root, has = (d) => (t.mask >> ((r + d) % 12)) & 1; return r !== undefined && has(0) && has(7) && !has(3) && !has(4) && (has(2) || has(5)); };
+// Per template: max over its group (itself, every template whose pitch-class
+// set contains or is contained in its own, and — for a sus chord or a
+// same-root major/minor triad — the other side of that pair) of the model
+// log-posterior + prior, floored at −12. Cached on the template list.
+function mixTerm(mscores, templates) {
+  const n = templates.length;
+  let nest = templates.mixNest;
+  if (!nest || nest.length !== n) {
+    nest = templates.mixNest = templates.map((t, i) => {
+      const out = [], sus = isSus(t);
+      for (let j = 0; j < n; j++) {
+        const u = templates[j], both = t.mask & u.mask;
+        if (both === t.mask || both === u.mask) { out.push(j); continue; }
+        if (t.root !== undefined && t.root === u.root && t.pcs.length === 3 && u.pcs.length === 3 && (sus || isSus(u))) out.push(j);
+      }
+      return out;
+    });
+  }
+  const term = templates.mixTermBuf && templates.mixTermBuf.length === n ? templates.mixTermBuf : (templates.mixTermBuf = new Float32Array(n));
+  for (let i = 0; i < n; i++) {
+    let m = -Infinity;
+    for (const j of nest[i]) { const v = mscores[j] + templates[j].prior; if (v > m) m = v; }
+    term[i] = Math.max(-12, m);
+  }
+  return term;
 }
 
 // Node: load from a path. Browser: main.js fetches the JSON and calls new Model().

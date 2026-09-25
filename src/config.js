@@ -58,8 +58,12 @@ export const CONFIG = {
     //   'mix'   templates + modelMix · log-posterior pick the chord, the
     //           templates' own confidence decides whether to speak
     // Same smoothing / StableRule / decoys / candidate restriction either
-    // way. Evidence and training: tools/train_model.mjs, docs/MODEL.md.
-    // Try it live with ?cfg=detect.model:mix (or :model).
+    // way. Off: on GuitarSet players it has never heard (leave-one-out) the
+    // mix beats the templates everywhere (basic candidates 87.1→89.8%, open
+    // world 74.3→77.0%, every 7th family up), but on the player's own takes
+    // it is a wash (88→88% of targets fired) and sus chords, which it knows
+    // only from synthetic clips, fire half as often on the synth bench.
+    // docs/MODEL.md; tools/train_model.mjs; ?cfg=detect.model:mix to try.
     model: false,
     modelMix: 0.1,
   },

@@ -17,7 +17,7 @@
     "report": "node tools/telemetry_report.mjs latest",
     "bench:personal": "node tools/personal_bench.mjs --diag --write=docs/PERSONAL.md",
     "model:extract": "node tools/train_model.mjs extract --augment=2 --noise=/mnt/aegis/chord-bunny/noise",
-    "model:train": "node tools/train_model.mjs train --hidden=64 --dropout=0.2 --noise=0.1 --write=data/model.json",
+    "model:train": "node tools/train_model.mjs train --hidden=64 --dropout=0.2 --noise=0.1 --user-weight=5 --write=data/model.json",
     "model:cv": "node tools/model_cv.mjs --json=docs/model_cv.json",
     "labels": "node tools/session_labels.mjs latest --replay",
     "fetch-testdata": "python3 testdata/fetch_guitarset.py"

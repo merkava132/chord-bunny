@@ -12,6 +12,7 @@ import path from 'node:path';
 import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
 import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
+import { Featurizer, scoreModel, mixResult, loadModelFile } from '../src/model.js';
 import { CONFIG, applyOverrides } from '../src/config.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return m ? [m[1], m[2] ?? true] : [a, true]; }));
@@ -21,6 +22,12 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const CHORDS = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/chords.json')));
 const PROFILES = JSON.parse(fs.readFileSync(args.profiles === 'hex' ? path.join(ROOT, 'testdata/notebank/partials_hex.json') : path.join(ROOT, 'data/partials.json')));
 const SENS = Number(args.sens ?? 0.35);
+// --model[=path]: score with the learned classifier; --mix=β: templates + β·model (ChordDetector 'mix' mode);
+// --notes-from=01,03: only clips containing at least one note from those players' hex takes (the ones held out of training)
+const MODEL = args.model ? await loadModelFile(path.resolve(ROOT, args.model === true ? CONFIG.model.path : String(args.model))) : null;
+if (args.model && !MODEL) { console.error('no model file'); process.exit(1); }
+const MIX = Number(args.mix || 0);
+const NOTES_FROM = args['notes-from'] ? new Set(String(args['notes-from']).split(',')) : null;
 const MYSONG = ['Am', 'Asus4', 'Asus2', 'Em', 'C', 'Am7', 'G', 'F', 'Gsus4', 'D', 'Dsus2', 'Fsus4', 'Fmaj7', 'Cmaj7', 'Em7'];
 const SETS = {
   all: () => CHORDS,
@@ -35,7 +42,7 @@ const SETS = {
 const setNames = String(args.sets || 'all,basic,basic+sus,basic+7ths,mysong').split(',');
 const variants = new Set(String(args.variants || 'clean,restrum,openMuted,missingTop,weakTop,missingInner').split(','));
 const labels = fs.readFileSync(path.join(ROOT, 'testdata/synth/labels.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
-  .filter(l => variants.has(l.variant) && (!args.chord || l.id === args.chord));
+  .filter(l => variants.has(l.variant) && (!args.chord || l.id === args.chord) && (!NOTES_FROM || l.notes.some(n => NOTES_FROM.has(n.src.slice(0, 2)))));
 
 // analyse every clip once: per frame (t, level, chroma) — templates are scored per set afterwards
 const cache = new Map();
@@ -44,12 +51,14 @@ function analyse(file) {
   if (cache.has(file)) return cache.get(file);
   const wav = decodeWav(fs.readFileSync(path.join(ROOT, file)));
   if (!an || an.opts.sampleRate !== wav.sampleRate) an = new PitchAnalyzer({ sampleRate: wav.sampleRate, profiles: PROFILES });
-  const N = an.opts.fftSize, sm = new Float32Array(an.nP), out = [];
+  const N = an.opts.fftSize, sm = new Float32Array(an.nP), out = [], fz = MODEL ? new Featurizer(an.nP) : null;
   for (const { start, frame } of frames(wav.samples, N, CONFIG.detect.hop)) {
     const t = (start + N / 2) / wav.sampleRate, level = rms(frame);
     if (level < CONFIG.detect.rmsGate) { out.push({ t, level, chroma: null }); continue; }
-    const act = an.analyze(frame); for (let i = 0; i < an.nP; i++) sm[i] = CONFIG.detect.ema * sm[i] + (1 - CONFIG.detect.ema) * act[i];
-    out.push({ t, level, chroma: Float32Array.from(an.chroma(sm)) });
+    const act = an.analyze(frame);
+    const feat = fz ? Float32Array.from(fz.push(act)) : null;
+    for (let i = 0; i < an.nP; i++) sm[i] = CONFIG.detect.ema * sm[i] + (1 - CONFIG.detect.ema) * act[i];
+    out.push({ t, level, chroma: Float32Array.from(an.chroma(sm)), feat });
   }
   cache.set(file, out);
   return out;
@@ -58,7 +67,7 @@ function analyse(file) {
 const results = {};
 for (const setName of setNames) {
   const cand = SETS[setName]?.(); if (!cand) { console.error(`unknown set ${setName}`); continue; }
-  const T = buildTemplates(cand);
+  const T = buildTemplates(cand), CLS = MODEL ? T.map(t => MODEL.classOf(t)) : null;
   const inSet = new Set(cand.map(c => c.id));
   const fam = {};   // category → { clips, recall, fire, wrong, conf, confusions }
   for (const l of labels) {
@@ -70,7 +79,10 @@ for (const setName of setNames) {
     for (const f of fr) {
       let id = null;
       if (!f.chroma) { hist.length = 0; rule.push(f.t, null, true); continue; }
-      const r = scoreTemplates(f.chroma, T), c = confidenceOf(r, T);
+      let r;
+      if (MODEL && MIX) { const tpl = scoreTemplates(f.chroma, T), c0 = tpl.best >= 0 ? confidenceOf(tpl, T) : 0; r = mixResult(tpl, scoreModel(MODEL, MODEL.forward(f.feat), T, new Array(T.length), CLS), MIX, T, c0); }
+      else r = MODEL ? scoreModel(MODEL, MODEL.forward(f.feat), T, new Array(T.length), CLS) : scoreTemplates(f.chroma, T);
+      const c = confidenceOf(r, T);
       hist.push(c >= SENS ? T[r.best].id : null); if (hist.length > CONFIG.detect.smoothingLen) hist.shift();
       const m = new Map(); for (const h of hist) m.set(h, (m.get(h) || 0) + 1);
       let bp = null, bc = 0; for (const [k, v] of m) if (v > bc) { bc = v; bp = k; }
@@ -87,7 +99,7 @@ for (const setName of setNames) {
     for (const [k, v] of conf) e.confusions.set(`${l.id}→${k}`, (e.confusions.get(`${l.id}→${k}`) || 0) + v);
   }
   results[setName] = fam;
-  console.log(`\n== candidates: ${setName} (${T.length} templates, profiles=${args.profiles || 'mic'}, variants=${[...variants].join('/')})`);
+  console.log(`\n== candidates: ${setName} (${T.length} templates, profiles=${args.profiles || 'mic'}, variants=${[...variants].join('/')}${MODEL ? `, scorer=${MIX ? `templates+${MIX}·model` : 'model'}` : ''}${NOTES_FROM ? `, clips with notes from ${[...NOTES_FROM].join('/')}` : ''}; ${labels.length} clips)`);
   console.log('family    clips  recall  fire≤1s  wrongfire  conf');
   const order = ['basic', 'barre', 'sus', 'add9', 'maj7', 'minor7', 'seventh', 'slash'];
   for (const f of order) { const e = fam[f]; if (!e) continue;

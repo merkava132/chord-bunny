@@ -93,7 +93,7 @@ export function buildTemplates(chords, { profile = null, alpha = 0, sizeBonus = 
       for (let i = 0; i < 12; i++) w[i] += alpha * p[i];
       perfect = 0; for (let i = 0; i < 12; i++) if (w[i] > 0) perfect += w[i] * Math.log(w[i] + eps);   // score when q = w
     }
-    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, w, prior: CONFIG.detect.prior[c.category] || 0, bonus: sizeBonus * Math.log(pcs.length), perfect });
+    byKey.set(key, { id: c.id, ids: [c.id], pcs, mask, root: PC_INDEX[c.root], w, prior: CONFIG.detect.prior[c.category] || 0, bonus: sizeBonus * Math.log(pcs.length), perfect });
   }
   // decoys: chord ids in play only as foils (practice mode's un-ticked basic
   // chords). A template made only of decoys is docked CONFIG.detect.prior.decoy.

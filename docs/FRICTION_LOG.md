@@ -314,3 +314,15 @@ fought back. Newest at the bottom.
 - The synth labels' `file` field is relative to the repo root; a
   regenerated set on /mnt/aegis needs the `testdata/synth` symlink
   re-pointed (done in this worktree only).
+- **Source–class confound.** Sus chords and most 7ths exist only as
+  synthetic hex-pickup clips in the training set, so the model learned
+  "hex timbre → one of those classes" along with the chords: on real mic
+  audio it under-calls 7ths (minor7 recall 42→8%), on synthetic clips it
+  over-calls them (triad recall 2% when 7ths are candidates). Augmentation
+  (noise, tilt) did not break the shortcut. The fix in the scorer was to
+  take those decisions away from the model (nest / sus grouping in
+  `mixResult`); the fix in the data would be real recordings of sus and 7th
+  chords — which is what the calibrate step collects.
+- `tools/model_cv.mjs` pipes through `tail` in my final.sh, so per-fold
+  lines only appeared when all six folds were done; a waiter grepping for
+  the first fold sat there for 20 minutes. Pipe to a file, tail the file.

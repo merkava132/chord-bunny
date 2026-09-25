@@ -26,7 +26,7 @@ const parseEval = (out) => {
   const last = out.trim().split('\n').pop();
   const n = Number(/\[(\d+) chord frames\]/.exec(last)?.[1] || 0);
   const get = (k) => Number(new RegExp(`\\b${k}=([\\d.]+)%`).exec(last)?.[1] || 0) / 100;
-  return { n, app: get('app'), model: get('model') };
+  return { n, app: get('app'), model: get('model'), mix: get('mix') };
 };
 // --dump=<scorer> prints "[scorer] by GT family: basic 71% (n=17208), maj7 ..."
 const parseFamilies = (out, scorer) => {
@@ -40,22 +40,24 @@ const folds = [];
 const t0 = performance.now();
 for (const p of PLAYERS) {
   const model = path.join(OUT, `model-holdout-${p}.json`);
-  const log = run('train_model.mjs', ['train', `--holdout=${p}`, ...trainArgs, `--write=${model}`, ...(args.sessions ? [`--sessions=${args.sessions}`] : [])]);
-  const best = /best epoch (\d+), holdout chord-frame acc ([\d.]+)%/.exec(log);
+  // --eval-only: reuse the fold models from the last run (evaluation is a minute per fold, training several)
+  const log = args['eval-only'] && fs.existsSync(model) ? '' : run('train_model.mjs', ['train', `--holdout=${p}`, ...trainArgs, `--write=${model}`, ...(args.sessions ? [`--sessions=${args.sessions}`] : [])]);
+  const best = /best epoch (\d+), holdout chord-frame acc ([\d.]+)%/.exec(log) || (fs.existsSync(model) ? (() => { const m = JSON.parse(fs.readFileSync(model, 'utf8')).meta; return [null, m.bestEpoch, (100 * m.holdoutChordFrameAcc).toFixed(1)]; })() : null);
   const basic = parseEval(run('eval_chords.mjs', [`--model=${model}`, `--players=${p}`, '--chords=basic']));
   const all = parseEval(run('eval_chords.mjs', [`--model=${model}`, `--players=${p}`, '--listen']));
   const perfT = run('eval_chords.mjs', [`--model=${model}`, `--players=${p}`, '--subset=all', '--gt=performed', '--chords=basic,maj7,minor7,seventh', '--dump=app']);
   const perfM = run('eval_chords.mjs', [`--model=${model}`, `--players=${p}`, '--subset=all', '--gt=performed', '--chords=basic,maj7,minor7,seventh', '--dump=model']);
-  const fold = { player: p, rawFrameAcc: best ? Number(best[2]) / 100 : null, bestEpoch: best ? Number(best[1]) : null, basic, all, familiesT: parseFamilies(perfT, 'app'), familiesM: parseFamilies(perfM, 'model') };
+  const perfX = run('eval_chords.mjs', [`--model=${model}`, `--players=${p}`, '--subset=all', '--gt=performed', '--chords=basic,maj7,minor7,seventh', '--dump=mix']);
+  const fold = { player: p, rawFrameAcc: best ? Number(best[2]) / 100 : null, bestEpoch: best ? Number(best[1]) : null, basic, all, familiesT: parseFamilies(perfT, 'app'), familiesM: parseFamilies(perfM, 'model'), familiesX: parseFamilies(perfX, 'mix') };
   folds.push(fold);
-  console.log(`player ${p}: raw-frame ${best?.[2]}% (epoch ${best?.[1]})  basic: templates ${(100 * basic.app).toFixed(1)}% model ${(100 * basic.model).toFixed(1)}% (n=${basic.n})  all: templates ${(100 * all.app).toFixed(1)}% model ${(100 * all.model).toFixed(1)}% (n=${all.n})  (${((performance.now() - t0) / 60000).toFixed(1)} min)`);
+  console.log(`player ${p}: raw-frame ${best?.[2]}% (epoch ${best?.[1]})  basic: templates ${(100 * basic.app).toFixed(1)}% model ${(100 * basic.model).toFixed(1)}% mix ${(100 * basic.mix).toFixed(1)}% (n=${basic.n})  all: templates ${(100 * all.app).toFixed(1)}% model ${(100 * all.model).toFixed(1)}% mix ${(100 * all.mix).toFixed(1)}% (n=${all.n})  (${((performance.now() - t0) / 60000).toFixed(1)} min)`);
 }
 const agg = (key, who) => { let h = 0, n = 0; for (const f of folds) { h += f[key][who] * f[key].n; n += f[key].n; } return { acc: h / Math.max(1, n), n }; };
 const famAgg = (which) => { const out = {}; for (const f of folds) for (const [k, v] of Object.entries(f[which])) { const o = out[k] ||= { hit: 0, n: 0 }; o.hit += v.acc * v.n; o.n += v.n; } return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { acc: v.hit / Math.max(1, v.n), n: v.n }])); };
-const summary = { basic: { templates: agg('basic', 'app'), model: agg('basic', 'model') }, all: { templates: agg('all', 'app'), model: agg('all', 'model') }, families: { templates: famAgg('familiesT'), model: famAgg('familiesM') }, folds, trainArgs };
+const summary = { basic: { templates: agg('basic', 'app'), model: agg('basic', 'model'), mix: agg('basic', 'mix') }, all: { templates: agg('all', 'app'), model: agg('all', 'model'), mix: agg('all', 'mix') }, families: { templates: famAgg('familiesT'), model: famAgg('familiesM'), mix: famAgg('familiesX') }, folds, trainArgs };
 console.log('\nleave-one-player-out, frame-weighted over all six players:');
-console.log(`  open subset, basic candidates (instructed):  templates ${(100 * summary.basic.templates.acc).toFixed(1)}%  model ${(100 * summary.basic.model.acc).toFixed(1)}%  (${summary.basic.templates.n} chord frames)`);
-console.log(`  open subset, all candidates (open world):    templates ${(100 * summary.all.templates.acc).toFixed(1)}%  model ${(100 * summary.all.model.acc).toFixed(1)}%`);
+console.log(`  open subset, basic candidates (instructed):  templates ${(100 * summary.basic.templates.acc).toFixed(1)}%  model ${(100 * summary.basic.model.acc).toFixed(1)}%  mix ${(100 * summary.basic.mix.acc).toFixed(1)}%  (${summary.basic.templates.n} chord frames)`);
+console.log(`  open subset, all candidates (open world):    templates ${(100 * summary.all.templates.acc).toFixed(1)}%  model ${(100 * summary.all.model.acc).toFixed(1)}%  mix ${(100 * summary.all.mix.acc).toFixed(1)}%`);
 console.log('  all files, performed labels, basic+7ths candidates, recall by family:');
-for (const k of Object.keys(summary.families.templates)) console.log(`    ${k.padEnd(8)} templates ${(100 * summary.families.templates[k].acc).toFixed(0)}%  model ${(100 * (summary.families.model[k]?.acc || 0)).toFixed(0)}%  (n=${summary.families.templates[k].n})`);
+for (const k of Object.keys(summary.families.templates)) console.log(`    ${k.padEnd(8)} templates ${(100 * summary.families.templates[k].acc).toFixed(0)}%  model ${(100 * (summary.families.model[k]?.acc || 0)).toFixed(0)}%  mix ${(100 * (summary.families.mix[k]?.acc || 0)).toFixed(0)}%  (n=${summary.families.templates[k].n})`);
 if (args.json) fs.writeFileSync(path.resolve(ROOT, args.json), JSON.stringify(summary, null, 1));
