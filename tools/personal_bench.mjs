@@ -24,6 +24,7 @@ import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
 import { CONFIG, applyOverrides, sensitivityFromSlider } from '../src/config.js';
 import { buildLabels, DEFAULT_REC, DEFAULT_TEL } from './session_labels.mjs';
+import { GuitarGate } from '../src/dsp/gate.js';
 
 const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return [m[1], m[2] ?? true]; }));
 if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));
@@ -39,6 +40,11 @@ const L = CONFIG.detect.smoothingLen, NEED = Math.ceil(L * 0.6);
 const KEY = `f${CONFIG.detect.fftSize}h${CONFIG.detect.hop}g${CONFIG.detect.rmsGate}.act`;
 const PITCHES = []; for (let m = 40; m <= 81; m++) PITCHES.push(m);   // PitchAnalyzer defaults (minMidi..maxMidi)
 const NPITCH = PITCHES.length, ROW = 2 + NPITCH;   // ts, level, act[nP]
+// guitar-likeness gate (src/dsp/gate.js): --gate forces it on, --no-gate off, default CONFIG.gate.enabled; --gate-thr=X overrides the threshold
+const GATE_ON = args['no-gate'] ? false : args.gate ? true : !!CONFIG.gate.enabled;
+if (args['gate-thr'] !== undefined) CONFIG.gate.threshold = Number(args['gate-thr']);
+if (args['gate-resid'] !== undefined) CONFIG.gate.residMax = Number(args['gate-resid']);
+if (args['gate-ema'] !== undefined) CONFIG.gate.ema = Number(args['gate-ema']);
 const KNEE = Number(args.knee ?? 64), FLOOR = Number(args.floor ?? 0.25);   // chroma folding (analyzer DEFAULTS chromaKnee / chromaFloor)
 const CHROMA_W = Float32Array.from(PITCHES, m => m <= KNEE ? 1 : Math.max(FLOOR, 1 - (1 - FLOOR) * (m - KNEE) / Math.max(1, 81 - KNEE)));
 if (args.decoy !== undefined) applyOverrides(`detect.prior.decoy:${args.decoy}`);   // --decoy=X sweeps CONFIG.detect.prior.decoy
@@ -92,14 +98,32 @@ function segFrames(dir, seg) {
   fs.writeFileSync(cacheFile, Buffer.from(f.buffer));
   return f;
 }
+// Gate value per frame (GuitarGate over the NNLS residual, silence resets it), cached beside the activations.
+// Keyed by the gate's own parameters so sweeps recompute only when they change.
+function gateFrames(dir, seg) {
+  const name = `seg-${String(seg.seg).padStart(4, '0')}`, G = CONFIG.gate;
+  const cacheFile = path.join(dir, 'cache', `${name}.${KEY}.gate-r${G.residMax}-s${G.steep}-e${G.ema}.f32`);
+  if (fs.existsSync(cacheFile)) { const b = fs.readFileSync(cacheFile); const f = new Float32Array(b.byteLength / 4); new Uint8Array(f.buffer).set(b); return f; }
+  const wav = decodeWav(fs.readFileSync(path.join(dir, name + '.wav')));
+  const an = new PitchAnalyzer({ sampleRate: wav.sampleRate, fftSize: CONFIG.detect.fftSize, profiles: PARTIALS });
+  const gate = new GuitarGate(), rows = [];
+  for (const { frame } of frames(wav.samples, CONFIG.detect.fftSize, CONFIG.detect.hop)) {
+    if (rms(frame) < CONFIG.detect.rmsGate) { gate.silent(); rows.push(1); continue; }
+    rows.push(gate.push(an.residual(an.analyze(frame))));
+  }
+  const f = Float32Array.from(rows);
+  fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+  fs.writeFileSync(cacheFile, Buffer.from(f.buffer));
+  return f;
+}
 // frames of one segment within [a, b) as objects; the EMA runs over the whole segment (its state survives silent frames, as in the detector)
-function framesIn(f, a, b) {
+function framesIn(f, a, b, gf = null) {
   const out = [], sm = new Float32Array(NPITCH), EMA = CONFIG.detect.ema;
   for (let i = 0; i < f.length; i += ROW) {
     const ts = f[i], level = f[i + 1], silent = level < CONFIG.detect.rmsGate;
     if (!silent) for (let k = 0; k < NPITCH; k++) sm[k] = EMA * sm[k] + (1 - EMA) * f[i + 2 + k];
     if (ts < a || ts >= b) continue;
-    out.push({ ts, level, silent, chroma: silent ? null : fold(sm, new Float32Array(12)) });
+    out.push({ ts, level, silent, chroma: silent ? null : fold(sm, new Float32Array(12)), gate: gf ? gf[i / ROW] : 1 });
   }
   return out;
 }
@@ -116,7 +140,7 @@ function simulate(fr, T, sens, holdMs, ts0, tgt = null, strums = []) {
     if (r.best >= 0) {
       const conf = confidenceOf(r, T);
       if (f.ts >= ts0 + SETTLE) diag.push([tgt ? tgt.ids.includes(T[r.best].id) : false, conf, f.level, strums.some(s => f.ts >= s + 0.05 && f.ts < s + 0.5), T[r.best].id]);
-      hist.push(conf >= sens ? T[r.best].id : null); if (hist.length > L) hist.shift();
+      hist.push(conf >= sens && (!GATE_ON || f.gate >= CONFIG.gate.threshold) ? T[r.best].id : null); if (hist.length > L) hist.shift();
       const m = mode(hist); id = m.count >= NEED ? m.value : null;
       const fired = rule.push(f.ts, id);
       if (fired && f.ts >= ts0) fires.push({ ts: f.ts, id: fired });
@@ -140,7 +164,7 @@ for (const sid of sessions) {
   const strums = ev.filter(e => e.type === 'strum').map(e => e.ts);
   const dir = path.join(REC, sid);
   const segs = fs.readFileSync(path.join(dir, 'segments.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
-  const cache = new Map();
+  const cache = new Map(), gcache = new Map();
   for (const r of rows) {
     const dur = r.ts1 - r.ts0;
     if (dur < MIN_DUR) continue;
@@ -152,7 +176,8 @@ for (const sid of sessions) {
     const noise = (SESSIONS_META[sid]?.noise || []).some(([a, b]) => r.ts1 > a && r.ts0 < (b ?? Infinity));
     const seg = segs.find(s => s.seg === r.seg);
     if (!cache.has(r.seg)) cache.set(r.seg, segFrames(dir, seg));
-    const fr = framesIn(cache.get(r.seg), r.ts0 - WARMUP, r.ts1);
+    if (GATE_ON && !gcache.has(r.seg)) gcache.set(r.seg, gateFrames(dir, seg));
+    const fr = framesIn(cache.get(r.seg), r.ts0 - WARMUP, r.ts1, GATE_ON ? gcache.get(r.seg) : null);
     const strumTs = strums.filter(ts => ts >= r.ts0 && ts < r.ts1), n = strumTs.length;
     intervals.push({ session: sid, target: r.target, ts0: r.ts0, ts1: r.ts1, dur, strums: n, strumTs, enabled, noise, live: r.matched ? 'match' : r.shownBecause, liveMatchedAt: r.matchedAt, cand, fr,
       sens: args.sens !== undefined ? Number(args.sens) : sensitivityFromSlider(st.sensitivity ?? CONFIG.sensitivity.defaultSlider),
@@ -213,7 +238,7 @@ const targetRows = [...byTarget].sort((a, b) => b[1].length - a[1].length).map((
 // ---- print ----
 const lines = [];
 lines.push(`personal bench — ${sessions.length} session(s): ${sessions.join(' ')}`);
-lines.push(`profile: ${PROFILE ? `${profilePath} (alpha ${ALPHA}, ${Object.keys(PROFILE.chords || {}).length} chords)` : 'none'}${args.cfg ? `   cfg: ${args.cfg}` : ''}   knee/floor ${KNEE}/${FLOOR}  decoy ${DECOY}  rule ${RULE}`);
+lines.push(`profile: ${PROFILE ? `${profilePath} (alpha ${ALPHA}, ${Object.keys(PROFILE.chords || {}).length} chords)` : 'none'}${args.cfg ? `   cfg: ${args.cfg}` : ''}   knee/floor ${KNEE}/${FLOOR}  decoy ${DECOY}  rule ${RULE}  gate ${GATE_ON ? `on (resid ≤ ${CONFIG.gate.residMax}, thr ${CONFIG.gate.threshold}, ema ${CONFIG.gate.ema})` : 'off'}`);
 lines.push(`${results.length} target intervals, ${played.length} played (≥${MIN_STRUMS} strums, ≥${MIN_DUR}s, sound after the first second)`);
 lines.push(`  live app matched ${pct(summary.liveHit)}   offline: target fired ${pct(summary.hit)}, wrong chord fired first ${pct(summary.wrongFirst)} (${summary.wrongFires} wrong fires), delay p50 ${summary.delayP50?.toFixed(2)}s p90 ${summary.delayP90?.toFixed(2)}s`);
 lines.push(`  player: first strum ${summary.reactionP50?.toFixed(2)}s after the target appears; detector: target fired ${summary.strumDelayP50?.toFixed(2)}s (p90 ${summary.strumDelayP90?.toFixed(2)}s) after that first strum`);

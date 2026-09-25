@@ -164,7 +164,7 @@ telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, 
 // ---------- debug panel (?debug=1 or the toggle) ----------
 const debugEl = document.getElementById('debug');
 const debugCb = document.getElementById('debug-cb');
-const dbg = Object.fromEntries(['chroma', 'level', 'peak', 'clip', 'verdict', 'best', 'conf-fill', 'conf-thr', 'conf', 'stable', 'top', 'cands', 'session', 'perf', 'config'].map(k => [k, document.getElementById('dbg-' + k)]));
+const dbg = Object.fromEntries(['chroma', 'level', 'peak', 'clip', 'verdict', 'best', 'gate', 'conf-fill', 'conf-thr', 'conf', 'stable', 'top', 'cands', 'session', 'perf', 'config'].map(k => [k, document.getElementById('dbg-' + k)]));
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 dbg.chroma.innerHTML = NOTE_NAMES.map(n => `<div class="pc"><div class="f"></div><div class="n">${n}</div></div>`).join('');
 const dbgPcs = [...dbg.chroma.querySelectorAll('.pc')];
@@ -190,6 +190,7 @@ function renderDebug() {
   }
   dbg.level.textContent = f.level.toFixed(3); dbg.peak.textContent = f.peak.toFixed(2); dbg.clip.textContent = `${(f.clip * 100).toFixed(1)}%`;
   dbg.verdict.textContent = f.smoothed || '—'; dbg.best.textContent = f.bestId || '—';
+  dbg.gate.textContent = f.gate === undefined ? '—' : `${f.gate.toFixed(2)}${CONFIG.gate.enabled && f.gate < CONFIG.gate.threshold ? ' ✗' : ''}`;   // guitar-likeness (CONFIG.gate)
   const conf = f.confidence || 0, thr = d.sensitivity;
   dbg['conf-fill'].style.width = `${Math.round(conf * 100)}%`; dbg['conf-thr'].style.left = `${Math.round(thr * 100)}%`;
   dbg.conf.textContent = `${conf.toFixed(2)} / ${thr.toFixed(2)}`;
@@ -371,7 +372,7 @@ function _wireTelemetry(d) {
     const ev = { ts: +f.t.toFixed(3), level: +f.level.toFixed(4), peak: +f.peak.toFixed(3), clip: +f.clip.toFixed(3) };
     if (playing) {
       const order = f.scores.map((sc, i) => i).sort((a, b) => f.scores[b] - f.scores[a]).slice(0, 3);
-      ev.id = f.smoothed; ev.best = f.bestId; ev.conf = +f.confidence.toFixed(2);
+      ev.id = f.smoothed; ev.best = f.bestId; ev.conf = +f.confidence.toFixed(2); ev.g = +f.gate.toFixed(2);
       ev.top = order.map(i => [f.templates[i].id, +f.scores[i].toFixed(2)]);
       ev.chroma = Array.from(f.chroma, v => +v.toFixed(2));
     }
