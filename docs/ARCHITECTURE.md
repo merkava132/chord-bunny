@@ -49,7 +49,13 @@ basic chords as candidates, 76% with all 53). So:
   (`PracticeMode._syncCandidates`). A basic chord that is not ticked counts
   for a richer target on the same root that contains it (`_isMatch`: Am
   heard while the target is Am7 and Am is not ticked → match).
-- **listen** scores all 53 (`ListenMode._wireDetector` → `setCandidates(null)`).
+- **listen** scores all chords (`ListenMode._wireDetector` → `setCandidates(null)`).
+- **decoys**: the un-ticked basic chords are in play as foils, but they also
+  win the ties a missing third leaves open once harmonic leakage tips them
+  (Em heard as E when the G string is quiet — E2's 5th partial is G#; Am as
+  A). `setCandidates(ids, { decoys })` docks templates made only of decoys
+  by `CONFIG.detect.prior.decoy` (0.3): on the player's own takes, wrong
+  chord fired first 15→10%, delay −0.15 s (`tools/personal_bench.mjs`).
 
 ## Twins and nested templates
 
@@ -79,6 +85,45 @@ and `POST /api/profile/learn` (the "learn from my recordings" button) reruns
 the tool and hot-swaps it via `detector.setProfile()`. Leave-one-out on the
 first session (77 intervals, basic chords): settled-frame accuracy 56→59%,
 wrong fires 18→14, median delay 2.21→2.05 s.
+
+## Ground truth from the player
+
+Practice labels are a guess ("the player was playing the target"), so the app
+asks for better ones in two places:
+
+- **Feedback keys.** After every advance the caption offers one keypress:
+  `heard G ✓ — press N if that was wrong` after a detector match, `G not
+  heard — press Y if you were playing it` after a timer advance (mic on).
+  → telemetry `label` `{ target, kind: fp|fn, heard, ts0, ts1 }` with the
+  stream-time range the target was on screen. Nothing pressed = the default
+  assumption stands.
+- **Calibration** (settings → calibrate, `src/enroll.js`). Each ticked chord
+  is shown for 4 strums, then each open string for 2 plucks, with the app
+  certain of what is being played → telemetry `enroll` `{ kind: chord,
+  chord, ts0, ts1, strums }` / `{ kind: string, string 0..5, ts0, ts1,
+  plucks }`. Strums are counted by `OnsetDetector` on the detector's own
+  per-frame RMS (a rise to 2× the quietest frame of the last 0.4 s, still
+  rising, above 0.008, 0.4 s refractory) — **not** by the string tracker's
+  `strum` events, which re-trigger 8–21 times per chord while it rings.
+  The chord windows are gold intervals for `learn_profile.mjs`; the plucks
+  measure this guitar + mic's partial amplitudes per string.
+
+## Personal benchmark
+
+`tools/personal_bench.mjs` replays every practice recording against what the
+screen asked for, with the configuration that was live (enabled set,
+sensitivity, hold, profile, decoys), so a change can be judged on the
+player's own audio, not only on GuitarSet. Raw pitch activations are cached
+beside the recordings (`<session>/cache/*.act`), so a run takes ~7 s and any
+downstream knob (`--cfg=…`, `--decoy=`, `--sens=`, `--profile=none`) can be
+swept. "Played" intervals need ≥ 2 strums and ≥ 1.5 s; the first second of a
+target (the chord change) is not scored; annotated non-guitar ranges
+(`data/user/sessions.json`) are reported separately. It splits the player's
+reaction (first strum after the target appears) from the detector's latency
+(fire after that strum), and `--diag` prints where the target sits in the
+argmax and confidence distributions — that table is what showed the scorer,
+not the hold rule, was the bottleneck. `npm run bench:personal` writes
+docs/PERSONAL.md.
 
 ## Progressions
 
@@ -118,6 +163,8 @@ Batched every 2 s to `POST /api/telemetry?session=<id>` and appended to
 | `hint` | `ts, target, kind, text` | coach showed a hint (src/coach.js) |
 | `perf` | `msPerFrame, maxMs, budgetMs` | every ~10 s: detector cost vs the hop budget (0.3 of 21 ms in headless Chrome) |
 | `profile` | `chords{id: n}, sessions[]` | the personal profile was relearned from the app |
+| `label` | `ts, target, kind` (`fp`/`fn`), `heard[], ts0, ts1` | the player pressed N (false match) or Y (missed chord) after an advance |
+| `enroll` | `ts, kind` (`chord`/`string`), `chord` or `string`, `ts0, ts1, strums` or `plucks` | a calibration step was captured |
 
 `tools/telemetry_report.mjs` turns a file into a session summary;
 `tools/session_labels.mjs` joins it with the recordings.
@@ -164,6 +211,7 @@ leaves the machine; `python -m http.server` would just drop the POSTs.
 | `eval_listen.mjs` | listen display accuracy vs flicker for show/gap holds | GuitarSet |
 | `calibrate.mjs` | confidence threshold → coverage / precision | GuitarSet |
 | `eval_strings.mjs` | per-string presence / onsets / direction vs hex-pickup GT | GuitarSet |
+| `personal_bench.mjs` | the live configuration on the player's own takes: fired / wrong-first / delay, per-target confusions, `--diag` argmax and confidence tables, noise ranges | recordings + telemetry |
 | `bench.mjs` | all of the above → `docs/BENCH.md` | GuitarSet |
 | `telemetry_report.mjs` | what happened in a session (signal, verdicts, per-target matches, confusions) | telemetry |
 | `session_labels.mjs` | line recordings up with the screen; `--replay` re-runs the detector on each labelled interval | telemetry + recordings |

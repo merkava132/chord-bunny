@@ -13,18 +13,19 @@ It also watches the **strings**: which ones rang, which one you missed, whether 
 
 ## Chords
 
-53 chords in `data/chords.json`, picked in Settings → **chord set** (presets: basic, pop set, my song, all):
+62 chords in `data/chords.json`, picked in Settings → **chord set** (presets: basic, pop set, my song, all):
 
 | group | chords |
 |---|---|
 | basic | C D E F G A · Dm Em Am |
-| barre | Bm B F#m C#m Bb Gm F#m7 |
-| sus2 / sus4 | Asus2 Asus4 A7sus4 Dsus2 Dsus4 Esus4 Csus2 Csus4 Gsus4 Fsus2 Fsus4 |
+| barre | Bm B F#m C#m Bb Gm F#m7 Eb |
+| sus2 / sus4 | Asus2 Asus4 A7sus4 Dsus2 Dsus4 Esus4 Csus2 Csus4 Gsus4 Fsus2 Fsus4 Bsus4 |
 | add9 | Cadd9 Gadd9 Eadd9 Aadd9 |
-| maj7 | Cmaj7 Fmaj7 Gmaj7 Amaj7 Dmaj7 Emaj7 |
+| maj7 | Cmaj7 Fmaj7 Gmaj7 Amaj7 Dmaj7 Emaj7 · Cmaj7 hi (x35500) |
 | min7 | Am7 Dm7 Em7 Bm7 |
 | 7th | C7 D7 E7 G7 A7 B7 |
-| slash (bass note) | G/B D/F# C/G C/E Am/G A/C# |
+| 6 · 9 · add11 · #11 | G6 Em9 Fmaj7#11 Gadd11 D6sus2 |
+| slash (bass note) | G/B D/F# C/G C/E Am/G A/C# Dsus2/F# |
 
 Every voicing was checked against its chord tones by the generator that wrote the file (a 7th chord may drop its fifth, nothing else).
 
@@ -138,18 +139,19 @@ recordings/     per-session WAV segments (gitignored; start.sh points at /mnt/ae
 
 ## Future ideas
 
-- Self-calibrate the partial profiles to *your* guitar and mic from a few open-string plucks.
-- BPM-creep mode: speed up as you nail transitions.
 - Strum-tightness trainer: metronome + the onset detector we already have.
 - Chord audio playback via Tone.js `PluckSynth`.
 
 ## Progressions
 
 The "play" selector in practice switches from random related pairs to a
-progression from `data/progressions.json` (My Song's intro riff / verse /
-chorus / tail, I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
+progression from `data/progressions.json` (Girls Dead Monster's *My Song*
+in eight sections, numbered in learning order — intro riff, both verse
+lines, pre-chorus, chorus, chorus tail, interlude, outro — plus the whole
+song in order; I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
 D). The progression's chords are always detection candidates, whether or not
-they are ticked; "new pair" restarts it. Add a song by appending
+they are ticked, so the surest way to learn a section is to clear the chord
+set and pick the section; "new pair" restarts it. Add a song by appending
 `{ id, name, chords: [ids] }` — every id must exist in chords.json.
 
 ## Telemetry & recordings (local only)
@@ -176,6 +178,19 @@ Nothing is sent anywhere; `python -m http.server` would just drop the POSTs.
   match rate and confusions, listen-mode flicker, strum stats.
 - `node tools/replay.mjs recordings/<session>/seg-0003.wav [--chords=basic,sus]`
   — run a take through the detector offline and print the chord timeline.
+
+## Tell it when it was wrong
+
+After every advance a caption offers one key: **N** if the chord it heard
+was wrong, **Y** if it timed out while you were playing the chord. Settings →
+**calibrate** walks you through each ticked chord (4 strums) and the six open
+strings (2 plucks) while the app knows exactly what you are playing. Both
+become labelled takes in the telemetry (`label`, `enroll`) that the learning
+tools use — see docs/ARCHITECTURE.md "Ground truth from the player".
+
+`node tools/personal_bench.mjs` replays your own recordings against what the
+screen asked for, with the live configuration; `npm run bench:personal`
+writes docs/PERSONAL.md.
 
 ## Personal profile (calibration to your guitar)
 
