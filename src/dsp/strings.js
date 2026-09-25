@@ -18,7 +18,8 @@
 // separated reliably from a mono mic. They are reported as `inferred` from
 // strum contiguity rather than measured.
 
-import { PitchAnalyzer, TUNING, rms } from './analyzer.js';
+import { PitchAnalyzer, TUNING, rms, midiToHz } from './analyzer.js';
+import { FFT, hann } from './fft.js';
 
 export const STRING_DEFAULTS = {
   fftSize: 4096,
@@ -38,7 +39,37 @@ export const STRING_DEFAULTS = {
   fluxLog: 0,           // 1 → spectral flux on log-compressed magnitudes (noise-dominated in practice; off)
   onsetLookahead: 3,    // frames: onset must be a local flux maximum over ±this many frames
   contiguity: 1,        // fill strums to a contiguous string range (inferred strings)
+  // A string that is muted in the shape counts as struck only if its open-pitch
+  // fundamental actually stands out of an f0CheckN-point spectrum of the
+  // f0CheckN/sr seconds after the onset (peak over ±1 bin ≥ mutedF0Prom × the
+  // mean of the ±6 neighbouring bins). The tracker's own 4096-point frames
+  // cannot see this: E2 (82 Hz) and A2 (110 Hz) are 2.4 bins apart and the
+  // E2 template's learned profile puts 2.2× more weight on its 2nd partial
+  // than on the fundamental, so a chord's E3/E4 partials alone make "low E
+  // struck" — 63% of C strums and 66% of Am strums in the 2026-09-24 session,
+  // hence the false "you're hitting the low E" hints. Applied to muted
+  // strings only: on a rig with no 82 Hz (the player's mic-jack input — their
+  // open-E calibration pluck has its fundamental 23 dB under its 4th partial
+  // and below the noise floor) a played low E would otherwise never light up.
+  // At 3 (tools/eval_ghosts.mjs): player's session, string-0 strikes on
+  // C/Am/D 613 → 32, on Em/G unchanged (487); GuitarSet open subset, string-0
+  // ghosts (reported while the string is silent) 303 → 196, true strikes
+  // unchanged (306), per-frame F1 unchanged (77.0%), strum recall 82.6 →
+  // 82.2% (strums whose only "strings" were ghosts no longer emit). 0 = off.
+  mutedF0Prom: 3,
+  f0CheckN: 8192,
 };
+
+// Prominence of a spectral line: max magnitude over bins [b−near, b+near] over
+// the mean of bins within ±far excluding those. mag is indexed from bin kMin.
+export function lineProminence(mag, kMin, b, { near = 1, far = 6 } = {}) {
+  let peak = 0, floor = 0, n = 0;
+  for (let k = b - far; k <= b + far; k++) {
+    const i = k - kMin; if (i < 0 || i >= mag.length) continue;
+    if (Math.abs(k - b) <= near) peak = Math.max(peak, mag[i]); else { floor += mag[i]; n++; }
+  }
+  return n ? peak / (floor / n + 1e-12) : 0;
+}
 
 export class StringTracker {
   constructor({ sampleRate, profiles = null, profilesByString = null, ...opts }) {
@@ -56,7 +87,16 @@ export class StringTracker {
     this.lastOnsetFrame = -1e9;
     this.pending = null;
     this.history = [];
-    this.historyLen = Math.ceil((this.o.onsetWindowMs / 1000 * sampleRate) / this.o.hop) + 12;
+    // strums resolve onsetWindowMs after the onset (a later onset replaces a
+    // pending one, so this must not grow: at 24 frames the player's session
+    // lost 25% of its strums on played shapes)
+    this.resolveFrames = Math.ceil((this.o.onsetWindowMs / 1000 * sampleRate) / this.o.hop);
+    this.historyLen = this.resolveFrames + 12;
+    // raw sample ring (absolute sample index = frameIndex × hop … + fftSize) for the fundamental check
+    this.rawLen = 2 * this.o.f0CheckN + this.o.fftSize;
+    this.raw = new Float32Array(this.rawLen);
+    this.rawEnd = 0;
+    this.f0fft = null; this.f0win = null; this.f0re = null; this.f0im = null;
     this.ringing = new Float32Array(6);
     this.ringSince = new Float64Array(6).fill(-1);
     this.onEvent = null;
@@ -105,6 +145,10 @@ export class StringTracker {
   // Feed one frame of fftSize samples whose centre is at time `t` (seconds).
   process(frame, t) {
     const an = this.an;
+    // ring: frames are contiguous with hop `hop`; the first frame is written whole, then the new tail of each
+    { const N = frame.length, HOP = this.o.hop, fresh = this.rawEnd === 0 ? N : HOP, from = N - fresh;
+      for (let i = from; i < N; i++) this.raw[(this.rawEnd + i - from) % this.rawLen] = frame[i];
+      this.rawEnd += fresh; }
     const mag = an.spectrum(frame);
     let flux = 0;
     if (!this.prevMag) this.prevMag = new Float32Array(mag.length);
@@ -165,7 +209,7 @@ export class StringTracker {
       }
     }
 
-    if (this.pending && (this.frameIndex - this.pending.frame) * this.hopSeconds() * 1000 >= this.o.onsetWindowMs) {
+    if (this.pending && this.frameIndex - this.pending.frame >= this.resolveFrames) {
       this._resolveStrum(this.pending);
       this.pending = null;
     }
@@ -225,7 +269,12 @@ export class StringTracker {
         }
       }
       if (tOn == null) continue;
-      struck.push({ string: s, t: tOn, peak: peak[s], muted: !!this.muted[s], doubled: !!this.doubled[s], pitch: this.pitches[s], inferred: false });
+      let f0 = null;
+      if (this.muted[s] && this.o.mutedF0Prom > 0) {
+        f0 = this._f0Prominence(p, s);
+        if (f0 < this.o.mutedF0Prom) continue;   // no vibration at the open pitch: the chord's upper partials, not this string
+      }
+      struck.push({ string: s, t: tOn, peak: peak[s], muted: !!this.muted[s], doubled: !!this.doubled[s], pitch: this.pitches[s], inferred: false, ...(f0 !== null ? { f0: +f0.toFixed(2) } : {}) });
     }
     if (!struck.length) return;
     // contiguity: a strum sweeps a contiguous range of strings; fill gaps as inferred
@@ -265,6 +314,26 @@ export class StringTracker {
   }
 
   _emit(ev) { if (this.onEvent) this.onEvent(ev); if (this.onAnyEvent) this.onAnyEvent(ev); }
+
+  // Fundamental prominence (lineProminence) of string s at its voicing pitch in
+  // the last f0CheckN samples at resolution time — about 30 ms before the
+  // onset frame's centre to 145 ms after it, so the strum's own ring
+  // dominates. The spectrum is computed once per strum.
+  _f0Prominence(p, s) {
+    const N = this.o.f0CheckN, sr = this.sampleRate;
+    if (!this.f0fft) { this.f0fft = new FFT(N); this.f0win = hann(N); this.f0re = new Float32Array(N); this.f0im = new Float32Array(N); this.f0mag = new Float32Array(N / 2); }
+    if (this.f0For !== p) {
+      const start = this.rawEnd - N;
+      if (start < 0) { this.f0For = p; this.f0ok = false; return Infinity; }   // not enough audio yet: don't veto
+      const re = this.f0re, im = this.f0im, w = this.f0win;
+      for (let i = 0; i < N; i++) re[i] = this.raw[(start + i) % this.rawLen] * w[i];
+      im.fill(0); this.f0fft.transform(re, im);
+      for (let k = 0; k < N / 2; k++) this.f0mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      this.f0For = p; this.f0ok = true;
+    }
+    if (!this.f0ok) return Infinity;
+    return lineProminence(this.f0mag, 0, Math.round(midiToHz(this.pitches[s]) * N / sr));
+  }
 
   // Per-frame presence decision.
   present(h) {

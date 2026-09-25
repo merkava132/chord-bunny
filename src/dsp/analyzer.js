@@ -12,6 +12,7 @@
 // sounding. Decomposing onto harmonic templates keeps it.
 
 import { FFT, hann } from './fft.js';
+import { applyResponse } from './partials.js';
 
 export const TUNING = [40, 45, 50, 55, 59, 64];   // E2 A2 D3 G3 B3 E4 (MIDI)
 export const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -244,6 +245,34 @@ export class PitchAnalyzer {
     return { h, explained: vv > 0 ? 1 - resid / vv : 0 };
   }
 
+  // Fraction of the spectrum's energy the last solve() did NOT explain:
+  // ‖v − W h‖² / ‖v‖² = (‖v‖² − 2 hᵀb + hᵀGh) / ‖v‖², from the cached
+  // projections, so the normal path pays nothing unless asked. Harmonic
+  // sources (a guitar) fit the dictionary; speech, laughter and room noise
+  // leave most of their energy unexplained (src/dsp/gate.js).
+  residual(h = this.act, mag = this.mag) {
+    const nP = this.nP, G = this.G, b = this.b;
+    let vv = 0; for (let k = 0; k < mag.length; k++) vv += mag[k] * mag[k];
+    if (vv <= 0) return 1;
+    let hb = 0, hGh = 0;
+    for (let j = 0; j < nP; j++) {
+      const hj = h[j]; if (hj === 0) continue;
+      hb += hj * b[j];
+      const row = j * nP; let s = 0;
+      for (let k = 0; k < nP; k++) s += G[row + k] * h[k];
+      hGh += hj * s;
+    }
+    return Math.max(0, Math.min(1, (vv - 2 * hb + hGh) / vv));
+  }
+
+  // Spectral flatness of the compressed magnitude (0 = one line, 1 = white):
+  // geometric / arithmetic mean of the power in the analysed band.
+  flatness(mag = this.mag) {
+    let lg = 0, am = 0, n = 0;
+    for (let k = 0; k < mag.length; k++) { const p = mag[k] * mag[k] + 1e-12; lg += Math.log(p); am += p; n++; }
+    return n ? Math.exp(lg / n) / (am / n) : 1;
+  }
+
   // Compute this.b = Wᵀ mag (needed before solveSubset if solve() wasn't called).
   project(mag) {
     for (let j = 0; j < this.nP; j++) {
@@ -273,6 +302,26 @@ export class PitchAnalyzer {
     if (s > 0) for (let i = 0; i < 12; i++) out[i] /= s;
     return out;
   }
+}
+
+// The profile table the analyzer should run with for this player: the
+// GuitarSet table (data/partials.json) with the calibrated frequency
+// response applied to every pitch, and the six open strings replaced by
+// what the player's own plucks measured (data/user/partials.json, written by
+// tools/learn_response.mjs: { "<midi>": [a1, a2, …], meta, response }).
+// For the by-string table ("string:midi" keys) pass midiOf and an
+// overrideKey that only lets a string's own open pitch be replaced.
+export function mergeUserPartials(base, user, { midiOf = (k) => Number(k), overrideKey = (m) => String(m) } = {}) {
+  if (!base) return base;
+  if (!user) return base;
+  const out = user.response ? applyResponse(base, user.response, midiOf) : { ...base };
+  for (const key of Object.keys(user)) {
+    const m = Number(key);
+    if (!Number.isFinite(m) || !Array.isArray(user[key])) continue;   // meta, response
+    const k = overrideKey(m);
+    if (k !== null && k in out) out[k] = user[key];
+  }
+  return out;
 }
 
 export function rms(x, start = 0, end = x.length) {

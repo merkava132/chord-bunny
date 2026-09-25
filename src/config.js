@@ -111,6 +111,19 @@ export const CONFIG = {
     // (sus prior 0.10), real-note bench maj7 fires 38%, min7 41%.
     sizeBonus: 0,
   },
+  gate: {
+    // Guitar-likeness gate (src/dsp/gate.js): a frame whose NNLS residual
+    // (energy the harmonic dictionary cannot explain) is high gets no
+    // verdict, so the TV / talking cannot drive the hold rule. Player's own
+    // recordings, verdict frames: residual ≤ 0.4 keeps 97% of guitar frames
+    // and passes 27% of TV frames; tools/personal_bench.mjs --gate/--no-gate
+    // for the effect on matches (docs/PERSONAL.md).
+    enabled: true,
+    residMax: 0.4,        // score 0.5 here
+    steep: 20,            // residual 0.3 → 0.88, 0.5 → 0.12
+    ema: 0.5,             // across sounding frames; reset by silence
+    threshold: 0.5,       // smoothed score below this → no verdict this frame
+  },
   meter: {
     // practice meter: threshold at the midpoint, threshold + span fills it
     span: 0.25,
@@ -136,8 +149,21 @@ export const CONFIG = {
     // one. Leave-one-out on the first session (77 intervals, basic chords):
     // settled-frame accuracy 56→59%, wrong fires 18→14, median delay
     // 2.21→2.05 s. Absent file → canonical templates, no change.
-    alpha: 0.5,
+    // 2026-09-24: two leave-one-out runs on 7 sessions (408 intervals) put
+    // alpha 0 ahead (settled-frame accuracy 27.6% vs 26.1% at 0.5, fewer
+    // wrong fires) and the personal bench is flat either way, so the chroma
+    // profile is off by default; the file is still learned and reported so
+    // a clean calibration run can flip this. tools/learn_profile.mjs.
+    alpha: 0,
     path: 'data/user/profile.json',
+    // Calibration plucks (settings → calibrate) → tools/learn_response.mjs →
+    // data/user/partials.json: this player's open-string partial profiles and
+    // the mic/guitar frequency response they imply. When present the analyzer's
+    // harmonic dictionary is built from the GuitarSet table corrected by that
+    // response, with the six open strings replaced by the measured profiles
+    // (analyzer.mergeUserPartials). Off → GuitarSet profiles only.
+    userPartials: true,
+    partialsPath: 'data/user/partials.json',
   },
   coach: {
     // Practice hints (src/coach.js). Evaluated only while the target is unmatched.
@@ -158,12 +184,40 @@ export const CONFIG = {
     quietStrums: 4,       // strums seen while (almost) nothing passes the level gate → "very quiet"
     quietSpanSec: 0.3,    // …i.e. the frames above the gate span less than this
   },
+  smart: {
+    // "drill weak spots" (settings.smartPairs): with random pairs, the next
+    // chord's relatedness weight is multiplied by 1 + weight·weakness, where
+    // weakness ∈ [0,1] blends how slow the transition current→candidate has
+    // been (median time to match from fastSec to slowSec) and how often it
+    // was missed, from GET /api/stats. Transitions seen fewer than minN times
+    // get `explore` instead. relatedness 0 stays 0: pairs still make musical
+    // sense. Evidence to come: pair events carry weak:true when the factor
+    // was ≥ 1.5, so their time-to-match can be tracked across sessions.
+    weight: 2,
+    explore: 0.3,
+    fastSec: 1.5,
+    slowSec: 4.5,
+    minN: 2,
+  },
   input: {
     meterDecay: 0.85,     // header level meter fall per update
     loopbackPattern: 'monitor|loopback|hdmi|stereo mix|what u hear',   // device labels that are not a microphone
   },
   debug: {
     hz: 8,                // debug panel refresh rate
+  },
+  tempo: {
+    // Tempo practice (src/tempo.js): the pair advances on beat 1 of every bar.
+    defaultBpm: 78,       // My Song's tempo on the tab
+    minBpm: 40, maxBpm: 200,
+    countInBars: 1,       // clicks before the first chord
+    lookaheadSec: 0.1,    // clicks are scheduled this far ahead at exact audio times …
+    tickMs: 25,           // … from a timer this often (Chris Wilson's lookahead pattern)
+    clickGain: 0.25,      // ≈ −12 dBFS; accent on beat 1 is a higher pitch
+    historyBars: 8,       // the bar strip
+    // creep: after `cleanRun` bars in a row where the target was detected in
+    // time, +`up` bpm; after `missRun` missed bars in a row, −`down`.
+    creep: { up: 2, down: 2, cleanRun: 4, missRun: 2 },
   },
   strings: {
     // per-string tracker defaults live in src/dsp/strings.js (STRING_DEFAULTS);

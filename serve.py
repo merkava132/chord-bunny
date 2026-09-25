@@ -9,6 +9,8 @@ mic recordings. Nothing leaves the machine.
                                         body: int16 LE mono PCM → REC_DIR/ID/seg-N.wav
   POST /api/profile/learn               run tools/learn_profile.mjs over all recorded sessions → data/user/profile.json
   GET  /api/status                      what is stored where
+  GET  /api/stats                       practice statistics (tools/stats.mjs --json), cached until telemetry/ changes
+CB_TEL_DIR overrides the telemetry directory (default ./telemetry).
 Recordings are pruned oldest-first when REC_DIR exceeds --max-rec-mb.
 """
 import argparse, json, os, re, struct, subprocess, sys, threading, time
@@ -16,7 +18,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-TELEMETRY_DIR = os.path.join(ROOT, 'telemetry')
+TELEMETRY_DIR = os.path.abspath(os.environ.get('CB_TEL_DIR') or os.path.join(ROOT, 'telemetry'))
 SAFE = re.compile(r'^[A-Za-z0-9_.-]{1,80}$')
 lock = threading.Lock()
 
@@ -73,6 +75,8 @@ class Handler(SimpleHTTPRequestHandler):
         if body: self.wfile.write(body)
 
     def do_GET(self):
+        if urlsplit(self.path).path == '/api/stats':
+            return self._stats()
         if urlsplit(self.path).path == '/api/status':
             sessions = sorted(f[:-6] for f in os.listdir(TELEMETRY_DIR)) if os.path.isdir(TELEMETRY_DIR) else []
             _, total = prune(self.rec_dir, float('inf')) if os.path.isdir(self.rec_dir) else (0, 0)
@@ -118,6 +122,40 @@ class Handler(SimpleHTTPRequestHandler):
         return self._reply(404, {'error': 'unknown endpoint'})
 
 
+    _stats_cache = {'key': None, 'body': None}
+
+    def _stats(self):
+        # Practice statistics for the progress panel and weak-spot drilling.
+        # tools/stats.mjs parses only the event types it needs (~0.5 s for
+        # 60 MB); the result is cached until a telemetry file changes.
+        files = []
+        if os.path.isdir(TELEMETRY_DIR):
+            for n in os.listdir(TELEMETRY_DIR):
+                if n.endswith('.jsonl'):
+                    try: st = os.stat(os.path.join(TELEMETRY_DIR, n)); files.append((n, st.st_mtime_ns, st.st_size))
+                    except OSError: pass
+        key = tuple(sorted(files))
+        cache = Handler._stats_cache
+        if cache['key'] == key and cache['body'] is not None:
+            return self._reply(200, cache['body'])
+        cmd = ['node', os.path.join(ROOT, 'tools', 'stats.mjs'), '--json', '--tel-dir=' + TELEMETRY_DIR,
+               '--meta=' + os.path.join(ROOT, 'data', 'user', 'sessions.json')]
+        try:
+            r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            return self._reply(504, {'error': 'stats timed out'})
+        except FileNotFoundError as e:
+            return self._reply(500, {'error': f'node not found: {e}'})
+        if r.returncode != 0:
+            return self._reply(500, {'error': (r.stderr or r.stdout)[-2000:]})
+        try:
+            body = json.loads(r.stdout)
+        except ValueError as e:
+            return self._reply(500, {'error': f'bad stats output: {e}'})
+        with lock:
+            cache['key'] = key; cache['body'] = body
+        return self._reply(200, body)
+
     def _learn_profile(self):
         # Relearn the personal chroma profile from every recorded session.
         # Runs the node tool (30–120 s for a few sessions); the page waits.
@@ -136,8 +174,26 @@ class Handler(SimpleHTTPRequestHandler):
             with open(out) as f: prof = json.load(f)
         except OSError as e:
             return self._reply(500, {'error': f'no profile written: {e}', 'log': r.stdout[-2000:]})
+        # Calibration plucks → open-string partial profiles + frequency response
+        # (tools/learn_response.mjs → data/user/partials.json). Optional: no
+        # plucks yet is not an error, the summary just says so.
+        resp_out = os.path.join(ROOT, 'data', 'user', 'partials.json')
+        resp_cmd = ['node', os.path.join(ROOT, 'tools', 'learn_response.mjs'), '--all', '--write=' + resp_out,
+                    '--rec-dir=' + self.rec_dir, '--tel-dir=' + TELEMETRY_DIR]
+        response = 'response: not learned'
+        try:
+            r2 = subprocess.run(resp_cmd, cwd=ROOT, capture_output=True, text=True, timeout=300)
+            for line in r2.stdout.splitlines():
+                if line.startswith('summary: '): response = line[len('summary: '):]
+            if r2.returncode != 0: response = 'response: failed (' + (r2.stderr or r2.stdout)[-200:].strip() + ')'
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            response = f'response: failed ({e.__class__.__name__})'
+        chords = prof.get('chords', {})
+        summary = (f"profile: {len(chords)} chords from {prof.get('gold', 0)} calibration takes"
+                   f" + {prof.get('practiceMatched', 0)} practice matches; {response}")
         return self._reply(200, {'learnedAt': prof.get('learnedAt'), 'sessions': prof.get('sessions'),
-                                 'chords': {k: v.get('n') for k, v in prof.get('chords', {}).items()}, 'log': r.stdout[-3000:]})
+                                 'chords': {k: v.get('n') for k, v in chords.items()}, 'summary': summary,
+                                 'log': r.stdout[-3000:] + '\n' + (r2.stdout[-1500:] if 'r2' in locals() else '')})
 
 
 def main():

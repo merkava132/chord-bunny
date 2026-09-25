@@ -9,22 +9,25 @@ It also watches the **strings**: which ones rang, which one you missed, whether 
 ## Modes
 
 - **practice** — pair of chords; auto-advances on detection. Optional timer. Per-string feedback against the chord you're supposed to be holding. The next chord is always one that makes musical sense after the current one (same key, or same root — C → Csus4, Am → Am7, G → Em), never a random jump.
+- **tempo** (a checkbox in practice) — a metronome; the pair advances every bar instead of on detection. BPM (78 = My Song), 2/4/8 beats per chord, one count-in bar, a strip of the last 8 bars (green = the chord was detected in time). With **creep** on, 4 clean bars in a row raise the tempo by 2, 2 missed bars lower it. With a progression selected, the next four chords show under the pair.
+- **drill weak spots** (a checkbox in practice) — random pairs lean toward the transitions you match slowly or miss, from your own telemetry (Settings → **progress** shows the numbers: practice minutes per day, per-chord match rate, your slowest transitions).
 - **listen** — free-form chord recognizer. Plays your mic OR an audio file you load. Shows what it hears, with per-string activity for the detected shape.
 
 ## Chords
 
-53 chords in `data/chords.json`, picked in Settings → **chord set** (presets: basic, pop set, my song, all):
+62 chords in `data/chords.json`, picked in Settings → **chord set** (presets: basic, pop set, my song, all):
 
 | group | chords |
 |---|---|
 | basic | C D E F G A · Dm Em Am |
-| barre | Bm B F#m C#m Bb Gm F#m7 |
-| sus2 / sus4 | Asus2 Asus4 A7sus4 Dsus2 Dsus4 Esus4 Csus2 Csus4 Gsus4 Fsus2 Fsus4 |
+| barre | Bm B F#m C#m Bb Gm F#m7 Eb |
+| sus2 / sus4 | Asus2 Asus4 A7sus4 Dsus2 Dsus4 Esus4 Csus2 Csus4 Gsus4 Fsus2 Fsus4 Bsus4 |
 | add9 | Cadd9 Gadd9 Eadd9 Aadd9 |
-| maj7 | Cmaj7 Fmaj7 Gmaj7 Amaj7 Dmaj7 Emaj7 |
+| maj7 | Cmaj7 Fmaj7 Gmaj7 Amaj7 Dmaj7 Emaj7 · Cmaj7 hi (x35500) |
 | min7 | Am7 Dm7 Em7 Bm7 |
 | 7th | C7 D7 E7 G7 A7 B7 |
-| slash (bass note) | G/B D/F# C/G C/E Am/G A/C# |
+| 6 · 9 · add11 · #11 | G6 Em9 Fmaj7#11 Gadd11 D6sus2 |
+| slash (bass note) | G/B D/F# C/G C/E Am/G A/C# Dsus2/F# |
 
 Every voicing was checked against its chord tones by the generator that wrote the file (a 7th chord may drop its fifth, nothing else).
 
@@ -138,19 +141,29 @@ recordings/     per-session WAV segments (gitignored; start.sh points at /mnt/ae
 
 ## Future ideas
 
-- Self-calibrate the partial profiles to *your* guitar and mic from a few open-string plucks.
-- BPM-creep mode: speed up as you nail transitions.
 - Strum-tightness trainer: metronome + the onset detector we already have.
 - Chord audio playback via Tone.js `PluckSynth`.
 
 ## Progressions
 
 The "play" selector in practice switches from random related pairs to a
-progression from `data/progressions.json` (My Song's intro riff / verse /
-chorus / tail, I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
+progression from `data/progressions.json` (Girls Dead Monster's *My Song*
+in eight sections, numbered in learning order — intro riff, both verse
+lines, pre-chorus, chorus, chorus tail, interlude, outro — plus the whole
+song in order; I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
 D). The progression's chords are always detection candidates, whether or not
-they are ticked; "new pair" restarts it. Add a song by appending
+they are ticked, so the surest way to learn a section is to clear the chord
+set and pick the section; "new pair" restarts it. Add a song by appending
 `{ id, name, chords: [ids] }` — every id must exist in chords.json.
+
+## Non-guitar audio
+
+A guitar-likeness gate (`src/dsp/gate.js`, `CONFIG.gate`) turns a frame
+into "no verdict" when the harmonic dictionary cannot explain its spectrum
+(NNLS residual > 0.4): speech and TV pass 27% of the time, guitar 97%, and it
+costs one target in 420 on the personal benchmark. Ambient audio also gets
+recorded when the mic is left on; annotate non-guitar stretches in
+`data/user/sessions.json` so the benchmark and the stats skip them.
 
 ## Telemetry & recordings (local only)
 
@@ -177,7 +190,41 @@ Nothing is sent anywhere; `python -m http.server` would just drop the POSTs.
 - `node tools/replay.mjs recordings/<session>/seg-0003.wav [--chords=basic,sus]`
   — run a take through the detector offline and print the chord timeline.
 
-## Personal profile (calibration to your guitar)
+## Tell it when it was wrong
+
+After every advance a caption offers one key: **N** if the chord it heard
+was wrong, **Y** if it timed out while you were playing the chord. Settings →
+**calibrate** walks you through each ticked chord (4 strums) and the six open
+strings (2 plucks) while the app knows exactly what you are playing. Both
+become labelled takes in the telemetry (`label`, `enroll`) that the learning
+tools use — see docs/ARCHITECTURE.md "Ground truth from the player".
+
+`node tools/personal_bench.mjs` replays your own recordings against what the
+screen asked for, with the live configuration; `npm run bench:personal`
+writes docs/PERSONAL.md.
+
+## Calibration to your guitar and mic
+
+Settings → **calibrate** records each ticked chord (4 strums) and the six
+open strings (2 plucks). "learn from my recordings" (detection panel, `POST
+/api/profile/learn`) then runs two tools:
+
+- `tools/learn_response.mjs` measures the partial amplitudes of each open
+  string on *your* guitar and mic (`data/user/partials.json`, the same shape
+  as `data/partials.json`) and fits a frequency-response correction that the
+  analyzer applies to every pitch (`CONFIG.profile.userPartials`). It also
+  reports whether the low E's fundamental (82 Hz) is present at all on your
+  input — on a front-panel mic jack it is usually not, and then the string
+  tracker cannot see the low E directly (it is only reported struck when its
+  fundamental is really there, so the "you're hitting the low E" hint stays
+  quiet rather than guessing).
+- `tools/learn_profile.mjs` learns a per-chord chroma profile from the
+  calibration takes (gold, weight ×3) and matched practice takes. It is
+  blended with `CONFIG.profile.alpha`, **0 by default**: two leave-one-out
+  runs on 408 intervals put the canonical templates ahead. The tool prints
+  the evaluation so a clean calibration run can change that.
+
+## Personal profile (chroma, off by default)
 
 Templates score a chroma with uniform weights on the chord tones. Your guitar,
 mic and strumming produce a characteristic chroma per chord (the analyzer's

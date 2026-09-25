@@ -284,6 +284,125 @@ fought back. Newest at the bottom.
 - Note for the tools: the `enroll` events from session 2026-09-25T03-14-58
   are not clean ground truth (windows overlap, early advances). Ignore that
   session's enroll events; the user re-ran after the fix.
+## 2026-09-24 — low-E ghosts (branch `lowe`)
+
+- **`--set k=v` is silently a no-op** in eval_strings / eval_ghosts: the arg
+  parser only reads `--set=k=v` (one token); the two-token form yields
+  `{true: NaN}` and the tool runs with defaults. Cost me one full round of
+  "before/after" numbers that were identical because both were "after".
+  Headers now say `--set=k=v`.
+- The tracker's existing `f0Support` gate never bites: with the 4096-point
+  frames E2 (82 Hz) and A2 (110 Hz) are 2.4 bins apart, so the A string
+  fills the "E2 fundamental" bins, and the learned E2 profile weights the 2nd
+  partial 2.2× the fundamental, so the expected fundamental is tiny. Support
+  was 1.00 at p10 for true strikes *and* ghosts. A separate 8192-point
+  spectrum is needed to see the line at all.
+- First implementation delayed strum resolution to 24 frames so the check
+  window would start at the onset; a later onset replaces a pending one, so
+  strums 60–128 ms apart lost the first one — 25% fewer string-0 strikes on
+  Em/G in the player's session. Resolution is back at onsetWindowMs and the
+  check uses the latest 8192 samples instead (≈30 ms before the onset centre
+  to 145 ms after).
+- The player's rig has no 82 Hz: the open low E calibration pluck has its
+  fundamental 23 dB under its 4th partial and 4 dB *below* the local noise
+  floor (A2: +21 dB, D3: +25 dB). So the low E is only ever "seen" through
+  E3/E4 partials, which the chord also has. No detector fix can recover that;
+  the muted-string check just stops claiming what cannot be seen.
+
+## 2026-09-24 — progress panel + weak-spot drilling (stats branch)
+
+- `data/user/` in .gitignore had the trailing slash again, so a symlink to the
+  live data/user showed up as untracked in the worktree — the same trap as
+  testdata/. Rule is now `data/user`. Worth a lint: no ignore rule for a path
+  that might be symlinked from a worktree should end in `/`.
+- In a worktree `.git` is a file; `.git/info/exclude` does not exist. Use
+  `git rev-parse --git-path info/exclude`.
+- Stats over 60 MB of telemetry take 0.5 s only because parseSession
+  substring-filters lines before JSON.parse — 99% of lines are frame/strum
+  samples. Anything that reads telemetry should do the same.
+- Pair events before the mic is on carry `ts: 0` and timer advances; they are
+  not practice and would have counted as 24 unmatched targets in one session.
+- Headless screenshots: shot.py's bottom-row crop never fired because the
+  footer sticks to the bottom of a 100vh page, so the "wide" shot was 4000 px
+  of background. Shoot at a viewport height close to the content instead, or
+  find content bands by scanning rows (did that for the narrow one).
+
+## 2026-09-25 — guitar-likeness gate (branch `gate`)
+
+- **The premise was off by a minute.** "The app matched 12 targets on the
+  comedy show" — all 12 matches sit at stream ts 1089–1145, and the
+  recording there is 100% low-residual frames with 2–5 energy onsets per
+  10 s: the player's last minute of practice. The annotated noise range in
+  data/user/sessions.json (start 1083) begins ~65 s too early; the TV proper
+  starts ≈1150, produced zero matches, and was mostly not even recorded (the
+  recorder keeps a segment only if some frame reaches musicConf). Check the
+  match timestamps against the annotation before building a fix for them.
+- The bench in a worktree finds no sessions: telemetry/ and data/user/ are
+  gitignored and live only in the main checkout. `--tel-dir=…/chord-bunny/
+  telemetry` plus `command cp` of data/user/sessions.json (ignored there
+  too) — and the personal profile is likewise absent, so worktree bench
+  numbers are "profile: none" and not comparable with docs/PERSONAL.md;
+  compare before/after within one checkout only.
+- zsh `noclobber` again: `cat > src/dsp/gate.js` silently kept the old
+  file ("file exists" on stderr, tests failed on the stale version). Write
+  files from python or use `>|`.
+- The logistic fit on strum-aligned frames generalised badly across
+  sessions (98% train → 44% on the noisier session) because the "guitar"
+  label there is polluted: strum events fire in near-silence, and the
+  2026-09-25 session is quieter (+10 dB boost) with the TV possibly on all
+  along. Restricting to frames that actually produce verdicts (conf ≥ 0.35)
+  made the classes clean and the answer simple: residual alone.
+
+## 2026-09-24 — tempo mode (branch `tempo`)
+
+- Two clocks: the beat grid runs on `performance.now()` and clicks are
+  translated onto `AudioContext.currentTime` when scheduled (100 ms ahead,
+  25 ms timer). Reason: an AudioContext created outside a user gesture stays
+  suspended and its clock does not move, so a grid on the audio clock would
+  freeze until the next click on the page. With the translation the metronome
+  keeps time silently and the clicks join once the context runs.
+- `Metronome.landed(now)` originally generated beats with `time < now`, so a
+  beat at exactly `now` was handed out one tick late; the fake-clock test
+  caught it (beat at 12.0 missing from `landed(12)`). Generation is inclusive
+  for landed(), exclusive for pending().
+- `pending()` must also hand out beats that `landed()` generated first (too
+  late to click) or the two counters drift apart; the test pins that.
+- Headless driver: `env -i … PATH=/usr/bin:/bin` loses nvm's node — pass
+  node's absolute path and add its dir to PATH. Driver at
+  scratchpad/tempo_shots.mjs (fake mic + CDP), same shape as ui_shots.mjs.
+- The seconds-timer controls are hidden with a CSS class on `#practice`
+  while tempo is on rather than removed, so the STATS branch's index.html
+  edits in the settings area do not collide.
+
+## 2026-09-25 — learning from the calibration takes (enroll branch)
+
+- The tools read telemetry/*.jsonl and recordings/*/segments.jsonl while the
+  live server is still appending to them: `JSON.parse` on a half-written
+  last line killed `learn_profile.mjs --all` twice (once per file kind). The
+  button runs exactly that path, so both parses now skip unparsable lines.
+  Any tool that maps `JSON.parse` over a live file has the same hole
+  (personal_bench.mjs, telemetry_report.mjs).
+- `__pycache__/serve.cpython-312.pyc` is tracked despite the ignore rule and
+  shows up modified after every `python3 -m py_compile serve.py`; never
+  `git add -A` here.
+- Partial amplitudes peak-picked from a Hann spectrum were 12% low on a
+  synthetic pluck — scalloping loss, not a bug in the pluck: parabolic
+  interpolation on the log magnitude fixed it. Worth remembering for any
+  "measure the line at f" code.
+- The user's smoke-test calibration (buggy counter run) has 5 usable plucks
+  on 4 strings, 1–2 each; pluck-to-pluck partial variance is σ≈1 in the log
+  domain, so the fitted response (rms residual 0.82) is a sketch. The bench
+  with it applied moved nothing (target fired 71→72%, wrong-first 9→9%),
+  which is the honest result for 5 plucks; the machinery is what this branch
+  delivers, the numbers need a real calibration run.
+- The analyzer's profile domain question: GuitarSet profiles (room mic) and
+  the player's plucks (mic jack) are different response domains; the
+  dictionary needs one. Chosen: correct the whole GuitarSet table by the
+  fitted response, then override the six open pitches with the measured
+  profiles (analyzer.mergeUserPartials) — no double counting, no per-pitch
+  response knob in the analyzer, and the by-string table gets the same
+  treatment with an override restricted to each string's own open pitch.
+
 
 ## 2026-09-24 night — learned classifier (model branch)
 

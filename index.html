@@ -54,6 +54,18 @@
     </div>
     <!-- after an advance: one keypress says the detector was wrong (also clickable) -->
     <div class="feedback" id="feedback" hidden title="click, or press the key, if the detector got this one wrong"></div>
+    <!-- tempo mode (src/tempo.js): beat dots, the last bars, creep notes -->
+    <div class="tempo-strip" id="tempo-strip" hidden>
+      <span class="beats" id="beat-dots" aria-label="beat"></span>
+      <span class="bars" id="bar-history" title="last bars — green: chord detected in time, red: missed, hollow: unscored (mic off)"></span>
+      <span class="tempo-msg" id="tempo-msg"></span>
+    </div>
+    <!-- following a progression: what comes after "next" -->
+    <div class="upcoming" id="upcoming" hidden>
+      <span class="lbl">then</span>
+      <span class="chips" id="upcoming-chips"></span>
+      <span class="pos" id="upcoming-pos" title="position in the progression"></span>
+    </div>
 
     <div class="detection-bar" id="detection-bar">
       <div class="heard">heard: <span id="heard-chord">—</span></div>
@@ -75,15 +87,38 @@
         <input type="checkbox" id="autoadvance-cb" checked>
         auto-advance on detection
       </label>
-      <label class="toggle">
+      <label class="toggle" title="random pairs lean toward the transitions you match slowly or miss (see progress)">
+        <input type="checkbox" id="smart-cb" checked>
+        drill weak spots
+      </label>
+      <label class="toggle timer-ctl">
         <input type="checkbox" id="timer-cb">
         also advance on timer
       </label>
-      <label class="num">
+      <label class="num timer-ctl">
         <span>seconds</span>
         <input type="number" id="timer-secs" min="5" max="300" value="60">
       </label>
-      <div class="timer-display" id="timer-display" hidden>00:00</div>
+      <!-- tempo mode: replaces the seconds timer while on -->
+      <label class="toggle" title="metronome; the pair advances on beat 1 of every bar">
+        <input type="checkbox" id="tempo-cb">
+        tempo
+      </label>
+      <span class="tempo-controls" id="tempo-controls" hidden>
+        <label class="num">
+          <span>bpm</span>
+          <input type="number" id="tempo-bpm" min="40" max="200" value="78">
+        </label>
+        <label class="num">
+          <span>beats / chord</span>
+          <select id="tempo-beats"><option value="2">2</option><option value="4" selected>4</option><option value="8">8</option></select>
+        </label>
+        <label class="toggle" title="after 4 clean bars in a row: +2 bpm; after 2 missed bars: −2">
+          <input type="checkbox" id="tempo-creep" checked>
+          creep
+        </label>
+      </span>
+      <div class="timer-display timer-ctl" id="timer-display" hidden>00:00</div>
     </div>
   </section>
 
@@ -165,6 +200,14 @@
       until you press "learn from my recordings" under detection.</p>
     </details>
     <details>
+      <summary>progress</summary>
+      <div class="pg-head">
+        <span class="pg-status" id="progress-status">from your local telemetry (telemetry/*.jsonl); sessions with fewer than 10 matches don't count.</span>
+        <button id="progress-refresh" title="re-read the telemetry">refresh</button>
+      </div>
+      <div class="progress" id="progress-body"><p class="pg-empty">loading…</p></div>
+    </details>
+    <details>
       <summary>how it listens</summary>
       <div class="about">
         <p>Each 186 ms window of audio is decomposed onto harmonic templates for every
@@ -202,7 +245,7 @@
       <div class="debug-chroma" id="dbg-chroma"></div>
       <div class="debug-stats">
         <div>level <b id="dbg-level">–</b> · peak <b id="dbg-peak">–</b> · clip <b id="dbg-clip">–</b></div>
-        <div>verdict <b id="dbg-verdict">–</b> · best <b id="dbg-best">–</b></div>
+        <div>verdict <b id="dbg-verdict">–</b> · best <b id="dbg-best">–</b> · gate <b id="dbg-gate">–</b></div>
         <div class="debug-conf"><span>confidence</span><span class="track"><span class="fill" id="dbg-conf-fill"></span><span class="thr" id="dbg-conf-thr"></span></span><b id="dbg-conf">–</b></div>
         <div>stable window <b id="dbg-stable">–</b></div>
         <div>top <span id="dbg-top" class="mono">–</span></div>

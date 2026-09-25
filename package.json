@@ -15,6 +15,7 @@
     "eval:strings": "node tools/eval_strings.mjs",
     "calibrate": "node tools/calibrate.mjs",
     "report": "node tools/telemetry_report.mjs latest",
+    "stats": "node tools/stats.mjs",
     "bench:personal": "node tools/personal_bench.mjs --diag --write=docs/PERSONAL.md",
     "model:extract": "node tools/train_model.mjs extract --augment=2 --noise=/mnt/aegis/chord-bunny/noise",
     "model:train": "node tools/train_model.mjs train --hidden=64 --dropout=0.2 --noise=0.1 --user-weight=5 --write=data/model.json",

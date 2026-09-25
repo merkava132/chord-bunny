@@ -19,27 +19,39 @@
 // recomputed every run, exactly as src/detect.js does it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { PitchAnalyzer, frames, rms } from '../src/dsp/analyzer.js';
+import { PitchAnalyzer, frames, rms, mergeUserPartials } from '../src/dsp/analyzer.js';
+import { createHash } from 'node:crypto';
 import { decodeWav } from '../src/dsp/wav.js';
 import { buildTemplates, scoreTemplates, confidenceOf, StableRule } from '../src/detect.js';
 import { Featurizer, scoreModel, mixResult, loadModelFile } from '../src/model.js';
 import { CONFIG, applyOverrides, sensitivityFromSlider } from '../src/config.js';
 import { buildLabels, DEFAULT_REC, DEFAULT_TEL } from './session_labels.mjs';
+import { GuitarGate } from '../src/dsp/gate.js';
 
 const args = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => { const m = /^--([^=]+)(?:=(.*))?$/.exec(a); return [m[1], m[2] ?? true]; }));
 if (args.cfg) console.log('config overrides:', applyOverrides(args.cfg).join(' '));
 const TEL = args['tel-dir'] || DEFAULT_TEL, REC = args['rec-dir'] || DEFAULT_REC;
 const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));
-const PARTIALS = JSON.parse(fs.readFileSync(new URL('../data/partials.json', import.meta.url)));
+const BASE_PARTIALS = JSON.parse(fs.readFileSync(new URL('../data/partials.json', import.meta.url)));
+// --user-partials=none|PATH: the calibration-derived table (default: CONFIG.profile.partialsPath when present)
+const upPath = args['user-partials'] === 'none' ? null : (typeof args['user-partials'] === 'string' ? args['user-partials'] : path.resolve(import.meta.dirname, '..', CONFIG.profile.partialsPath));
+const USER_PARTIALS = upPath && CONFIG.profile.userPartials && fs.existsSync(upPath) ? JSON.parse(fs.readFileSync(upPath, 'utf8')) : null;
+const PARTIALS = mergeUserPartials(BASE_PARTIALS, USER_PARTIALS);
+const UP_KEY = USER_PARTIALS ? '.up' + createHash('md5').update(JSON.stringify(PARTIALS)).digest('hex').slice(0, 8) : '';
 const PROGRESSIONS = (() => { try { const p = JSON.parse(fs.readFileSync(new URL('../data/progressions.json', import.meta.url))); return Array.isArray(p) ? p : (p.progressions || []); } catch { return []; } })();
 const MIN_STRUMS = Number(args['min-strums'] ?? 2), MIN_DUR = 1.5, SETTLE = 1.0, WARMUP = 1.0;
 const profilePath = args.profile === 'none' ? null : (args.profile || path.resolve(import.meta.dirname, '..', CONFIG.profile.path));
 const PROFILE = profilePath && fs.existsSync(profilePath) ? JSON.parse(fs.readFileSync(profilePath, 'utf8')) : null;
 const ALPHA = args.alpha !== undefined ? Number(args.alpha) : (PROFILE ? CONFIG.profile.alpha : 0);
 const L = CONFIG.detect.smoothingLen, NEED = Math.ceil(L * 0.6);
-const KEY = `f${CONFIG.detect.fftSize}h${CONFIG.detect.hop}g${CONFIG.detect.rmsGate}.act`;
+const KEY = `f${CONFIG.detect.fftSize}h${CONFIG.detect.hop}g${CONFIG.detect.rmsGate}${UP_KEY}.act`;   // raw activations depend on the partial table
 const PITCHES = []; for (let m = 40; m <= 81; m++) PITCHES.push(m);   // PitchAnalyzer defaults (minMidi..maxMidi)
 const NPITCH = PITCHES.length, ROW = 2 + NPITCH;   // ts, level, act[nP]
+// guitar-likeness gate (src/dsp/gate.js): --gate forces it on, --no-gate off, default CONFIG.gate.enabled; --gate-thr=X overrides the threshold
+const GATE_ON = args['no-gate'] ? false : args.gate ? true : !!CONFIG.gate.enabled;
+if (args['gate-thr'] !== undefined) CONFIG.gate.threshold = Number(args['gate-thr']);
+if (args['gate-resid'] !== undefined) CONFIG.gate.residMax = Number(args['gate-resid']);
+if (args['gate-ema'] !== undefined) CONFIG.gate.ema = Number(args['gate-ema']);
 const KNEE = Number(args.knee ?? 64), FLOOR = Number(args.floor ?? 0.25);   // chroma folding (analyzer DEFAULTS chromaKnee / chromaFloor)
 const CHROMA_W = Float32Array.from(PITCHES, m => m <= KNEE ? 1 : Math.max(FLOOR, 1 - (1 - FLOOR) * (m - KNEE) / Math.max(1, 81 - KNEE)));
 if (args.decoy !== undefined) applyOverrides(`detect.prior.decoy:${args.decoy}`);   // --decoy=X sweeps CONFIG.detect.prior.decoy
@@ -97,8 +109,26 @@ function segFrames(dir, seg) {
   fs.writeFileSync(cacheFile, Buffer.from(f.buffer));
   return f;
 }
+// Gate value per frame (GuitarGate over the NNLS residual, silence resets it), cached beside the activations.
+// Keyed by the gate's own parameters so sweeps recompute only when they change.
+function gateFrames(dir, seg) {
+  const name = `seg-${String(seg.seg).padStart(4, '0')}`, G = CONFIG.gate;
+  const cacheFile = path.join(dir, 'cache', `${name}.${KEY}.gate-r${G.residMax}-s${G.steep}-e${G.ema}.f32`);
+  if (fs.existsSync(cacheFile)) { const b = fs.readFileSync(cacheFile); const f = new Float32Array(b.byteLength / 4); new Uint8Array(f.buffer).set(b); return f; }
+  const wav = decodeWav(fs.readFileSync(path.join(dir, name + '.wav')));
+  const an = new PitchAnalyzer({ sampleRate: wav.sampleRate, fftSize: CONFIG.detect.fftSize, profiles: PARTIALS });
+  const gate = new GuitarGate(), rows = [];
+  for (const { frame } of frames(wav.samples, CONFIG.detect.fftSize, CONFIG.detect.hop)) {
+    if (rms(frame) < CONFIG.detect.rmsGate) { gate.silent(); rows.push(1); continue; }
+    rows.push(gate.push(an.residual(an.analyze(frame))));
+  }
+  const f = Float32Array.from(rows);
+  fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+  fs.writeFileSync(cacheFile, Buffer.from(f.buffer));
+  return f;
+}
 // frames of one segment within [a, b) as objects; the EMA runs over the whole segment (its state survives silent frames, as in the detector)
-function framesIn(f, a, b) {
+function framesIn(f, a, b, gf = null) {
   const out = [], sm = new Float32Array(NPITCH), EMA = CONFIG.detect.ema, fz = MODEL ? new Featurizer(NPITCH) : null;
   for (let i = 0; i < f.length; i += ROW) {
     const ts = f[i], level = f[i + 1], silent = level < CONFIG.detect.rmsGate;
@@ -108,7 +138,7 @@ function framesIn(f, a, b) {
       if (fz) feat = Float32Array.from(fz.push(f.subarray(i + 2, i + 2 + NPITCH)));   // raw activations, as the detector feeds the model
     }
     if (ts < a || ts >= b) continue;
-    out.push({ ts, level, silent, chroma: silent ? null : fold(sm, new Float32Array(12)), feat });
+    out.push({ ts, level, silent, chroma: silent ? null : fold(sm, new Float32Array(12)), feat, gate: gf ? gf[i / ROW] : 1 });
   }
   return out;
 }
@@ -129,7 +159,7 @@ function simulate(fr, T, sens, holdMs, ts0, tgt = null, strums = []) {
     if (r.best >= 0) {
       const conf = confidenceOf(r, T);
       if (f.ts >= ts0 + SETTLE) diag.push([tgt ? tgt.ids.includes(T[r.best].id) : false, conf, f.level, strums.some(s => f.ts >= s + 0.05 && f.ts < s + 0.5), T[r.best].id]);
-      hist.push(conf >= sens ? T[r.best].id : null); if (hist.length > L) hist.shift();
+      hist.push(conf >= sens && (!GATE_ON || f.gate >= CONFIG.gate.threshold) ? T[r.best].id : null); if (hist.length > L) hist.shift();
       const m = mode(hist); id = m.count >= NEED ? m.value : null;
       const fired = rule.push(f.ts, id);
       if (fired && f.ts >= ts0) fires.push({ ts: f.ts, id: fired });
@@ -145,7 +175,7 @@ const intervals = [];
 for (const sid of sessions) {
   const rows = buildLabels(sid, { telDir: TEL, recDir: REC });
   if (!rows.length) { console.log(`${sid}: no labelled recordings`); continue; }
-  const ev = fs.readFileSync(path.join(TEL, sid + '.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const ev = fs.readFileSync(path.join(TEL, sid + '.jsonl'), 'utf8').split('\n').filter(Boolean).flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } });   // a live file may end mid-line
   const settings = { ...(ev.find(e => e.type === 'session')?.settings || {}) };
   // settings snapshot at each pair event (setting events arrive in time order)
   const snapAtPair = [];
@@ -153,7 +183,7 @@ for (const sid of sessions) {
   const strums = ev.filter(e => e.type === 'strum').map(e => e.ts);
   const dir = path.join(REC, sid);
   const segs = fs.readFileSync(path.join(dir, 'segments.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
-  const cache = new Map();
+  const cache = new Map(), gcache = new Map();
   for (const r of rows) {
     const dur = r.ts1 - r.ts0;
     if (dur < MIN_DUR) continue;
@@ -165,7 +195,8 @@ for (const sid of sessions) {
     const noise = (SESSIONS_META[sid]?.noise || []).some(([a, b]) => r.ts1 > a && r.ts0 < (b ?? Infinity));
     const seg = segs.find(s => s.seg === r.seg);
     if (!cache.has(r.seg)) cache.set(r.seg, segFrames(dir, seg));
-    const fr = framesIn(cache.get(r.seg), r.ts0 - WARMUP, r.ts1);
+    if (GATE_ON && !gcache.has(r.seg)) gcache.set(r.seg, gateFrames(dir, seg));
+    const fr = framesIn(cache.get(r.seg), r.ts0 - WARMUP, r.ts1, GATE_ON ? gcache.get(r.seg) : null);
     const strumTs = strums.filter(ts => ts >= r.ts0 && ts < r.ts1), n = strumTs.length;
     intervals.push({ session: sid, target: r.target, ts0: r.ts0, ts1: r.ts1, dur, strums: n, strumTs, enabled, noise, live: r.matched ? 'match' : r.shownBecause, liveMatchedAt: r.matchedAt, cand, fr,
       sens: args.sens !== undefined ? Number(args.sens) : sensitivityFromSlider(st.sensitivity ?? CONFIG.sensitivity.defaultSlider),
@@ -226,6 +257,7 @@ const targetRows = [...byTarget].sort((a, b) => b[1].length - a[1].length).map((
 // ---- print ----
 const lines = [];
 lines.push(`personal bench — ${sessions.length} session(s): ${sessions.join(' ')}`);
+lines.push(`partials: ${USER_PARTIALS ? `${upPath} (${Object.keys(USER_PARTIALS.meta?.plucks || {}).length} strings, response ${USER_PARTIALS.response?.n ?? 0} ratios)` : 'GuitarSet only'}`);
 lines.push(`profile: ${PROFILE ? `${profilePath} (alpha ${ALPHA}, ${Object.keys(PROFILE.chords || {}).length} chords)` : 'none'}${args.cfg ? `   cfg: ${args.cfg}` : ''}   knee/floor ${KNEE}/${FLOOR}  decoy ${DECOY}  rule ${RULE}${MODEL ? `   scorer: ${MIX ? `templates + ${MIX}·model` : 'model'} (${MODEL.classes.length} classes, hidden ${MODEL.hidden})` : ''}`);
 lines.push(`${results.length} target intervals, ${played.length} played (≥${MIN_STRUMS} strums, ≥${MIN_DUR}s, sound after the first second)`);
 lines.push(`  live app matched ${pct(summary.liveHit)}   offline: target fired ${pct(summary.hit)}, wrong chord fired first ${pct(summary.wrongFirst)} (${summary.wrongFires} wrong fires), delay p50 ${summary.delayP50?.toFixed(2)}s p90 ${summary.delayP90?.toFixed(2)}s`);

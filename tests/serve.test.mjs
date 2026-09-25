@@ -43,6 +43,16 @@ describe('serve.py', () => {
     assert.ok(typeof s.recBytes === 'number');
   });
 
+  it('/api/stats returns the practice statistics and caches them until telemetry changes', async () => {
+    const r = await fetch(`${base}/api/stats`);
+    assert.equal(r.status, 200);
+    const st = await r.json();
+    for (const k of ['totals', 'days', 'chords', 'transitions', 'slowest', 'labels']) assert.ok(k in st, k);
+    assert.ok(Array.isArray(st.days) && st.days.length === 14);
+    const again = await (await fetch(`${base}/api/stats`)).json();
+    assert.equal(again.generatedAt, st.generatedAt);   // served from the cache: same generation stamp
+  });
+
   it('appends telemetry lines per session and rejects bad session ids', async () => {
     const url = `${base}/api/telemetry?session=${session}`;
     assert.equal((await fetch(url, { method: 'POST', body: '{"t":0,"type":"a"}\n' })).status, 204);

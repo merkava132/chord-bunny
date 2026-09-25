@@ -43,12 +43,14 @@ export function relatedness(a, b) {
 
 // Pick the chord to practise after `current` from `pool`, weighted by
 // relatedness. Falls back to a uniform pick when nothing is related (or
-// there is no current chord).
-export function pickNext(current, pool, rng = Math.random) {
+// there is no current chord). `bias(candidate)` (optional) multiplies the
+// weight — practice mode uses it to lean toward the player's weak
+// transitions; an unrelated chord (weight 0) stays unrelated.
+export function pickNext(current, pool, rng = Math.random, bias = null) {
   const options = pool.filter(c => !current || c.id !== current.id);
   if (options.length === 0) return null;
   if (!current) return options[Math.floor(rng() * options.length)];
-  const weights = options.map(c => relatedness(current, c));
+  const weights = options.map(c => relatedness(current, c) * (bias ? bias(c) : 1));
   const total = weights.reduce((s, w) => s + w, 0);
   if (total === 0) return options[Math.floor(rng() * options.length)];
   let r = rng() * total;

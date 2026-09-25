@@ -11,23 +11,37 @@ import { StringTracker } from './dsp/strings.js';
 import { StringsView } from './strings-ui.js';
 import { Recorder } from './audio/recorder.js';
 import * as telemetry from './telemetry.js';
+import * as progress from './progress.js';
+import { OPEN_MIDI } from './dsp/partials.js';
+import { mergeUserPartials } from './dsp/analyzer.js';
 
 // ?cfg=detect.lam:0.4,listen.showMs:100 — experiment without editing (logged below)
 const CFG_OVERRIDES = applyOverrides(new URLSearchParams(location.search).get('cfg'));
 
-const [ALL_CHORDS, PROFILES, PROFILES_BY_STRING, USER_PROFILE, PROGRESSIONS, MODEL_JSON] = await Promise.all([
+const [ALL_CHORDS, BASE_PARTIALS, BASE_PARTIALS_BY_STRING, USER_PROFILE, PROGRESSIONS, USER_PARTIALS_0, MODEL_JSON] = await Promise.all([
   fetch('data/chords.json').then(r => r.json()),
   fetch('data/partials.json').then(r => r.json()).catch(() => null),
   fetch('data/partials_by_string.json').then(r => r.json()).catch(() => null),
   fetch(CONFIG.profile.path).then(r => r.ok ? r.json() : null).catch(() => null),   // personal profile, optional
   fetch('data/progressions.json').then(r => r.json()).catch(() => []),
+  CONFIG.profile.userPartials ? fetch(CONFIG.profile.partialsPath).then(r => r.ok ? r.json() : null).catch(() => null) : null,   // calibration plucks, optional
   // learned classifier (CONFIG.detect.model): the player's own model if there is one, else the shipped one
   CONFIG.detect.model
     ? fetch(CONFIG.model.userPath).then(r => r.ok ? r.json() : fetch(CONFIG.model.path).then(r => r.ok ? r.json() : null)).catch(() => null)
     : Promise.resolve(null),
 ]);
+// Partial-profile tables the analyzers run with: GuitarSet's, corrected by the
+// calibrated response and with the player's own open strings (CONFIG.profile.userPartials).
+let PROFILES = null, PROFILES_BY_STRING = null;
+function applyUserPartials(user) {
+  PROFILES = mergeUserPartials(BASE_PARTIALS, user);
+  PROFILES_BY_STRING = mergeUserPartials(BASE_PARTIALS_BY_STRING, user, { midiOf: (k) => Number(k.split(':')[1]), overrideKey: (m) => { const s = OPEN_MIDI.indexOf(m); return s < 0 ? null : `${s}:${m}`; } });
+}
+applyUserPartials(USER_PARTIALS_0);
+
 const MODEL = MODEL_JSON ? new Model(MODEL_JSON) : null;
 if (CONFIG.detect.model) console.log(MODEL ? `detector: learned model (${MODEL.classes.length} classes, hidden ${MODEL.hidden}, trained ${MODEL.meta?.trainedAt || '?'})` : 'detector: CONFIG.detect.model is on but no model file loaded — using templates');
+
 
 let audioCtx = null;
 let micStream = null;
@@ -150,8 +164,14 @@ profileBtn.addEventListener('click', async () => {
     if (!r.ok) throw new Error(body.error || r.statusText);
     userProfile = await fetch(CONFIG.profile.path + '?t=' + Date.now()).then(x => x.json());
     detector?.setProfile(userProfile);
+    if (CONFIG.profile.userPartials) {   // calibration plucks → partial profiles + response (tools/learn_response.mjs)
+      const up = await fetch(CONFIG.profile.partialsPath + '?t=' + Date.now()).then(x => x.ok ? x.json() : null).catch(() => null);
+      applyUserPartials(up);
+      detector?.setPartials(PROFILES);   // the string tracker picks the new tables up when the mic is next started
+    }
     showProfileStatus(userProfile);
-    telemetry.log('profile', { chords: body.chords, sessions: body.sessions });
+    if (body.summary) profileStatusEl.textContent = body.summary;
+    telemetry.log('profile', { chords: body.chords, sessions: body.sessions, summary: body.summary });
   } catch (err) {
     profileStatusEl.textContent = `could not learn: ${err.message}`;
   } finally { profileBtn.disabled = false; }
@@ -171,7 +191,7 @@ telemetry.log('session', { session: telemetry.session, ua: navigator.userAgent, 
 // ---------- debug panel (?debug=1 or the toggle) ----------
 const debugEl = document.getElementById('debug');
 const debugCb = document.getElementById('debug-cb');
-const dbg = Object.fromEntries(['chroma', 'level', 'peak', 'clip', 'verdict', 'best', 'conf-fill', 'conf-thr', 'conf', 'stable', 'top', 'cands', 'session', 'perf', 'config'].map(k => [k, document.getElementById('dbg-' + k)]));
+const dbg = Object.fromEntries(['chroma', 'level', 'peak', 'clip', 'verdict', 'best', 'gate', 'conf-fill', 'conf-thr', 'conf', 'stable', 'top', 'cands', 'session', 'perf', 'config'].map(k => [k, document.getElementById('dbg-' + k)]));
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 dbg.chroma.innerHTML = NOTE_NAMES.map(n => `<div class="pc"><div class="f"></div><div class="n">${n}</div></div>`).join('');
 const dbgPcs = [...dbg.chroma.querySelectorAll('.pc')];
@@ -197,6 +217,7 @@ function renderDebug() {
   }
   dbg.level.textContent = f.level.toFixed(3); dbg.peak.textContent = f.peak.toFixed(2); dbg.clip.textContent = `${(f.clip * 100).toFixed(1)}%`;
   dbg.verdict.textContent = f.smoothed || '—'; dbg.best.textContent = f.bestId || '—';
+  dbg.gate.textContent = f.gate === undefined ? '—' : `${f.gate.toFixed(2)}${CONFIG.gate.enabled && f.gate < CONFIG.gate.threshold ? ' ✗' : ''}`;   // guitar-likeness (CONFIG.gate)
   const conf = f.confidence || 0, thr = d.sensitivity;
   dbg['conf-fill'].style.width = `${Math.round(conf * 100)}%`; dbg['conf-thr'].style.left = `${Math.round(thr * 100)}%`;
   dbg.conf.textContent = `${conf.toFixed(2)} / ${thr.toFixed(2)}`;
@@ -378,7 +399,7 @@ function _wireTelemetry(d) {
     const ev = { ts: +f.t.toFixed(3), level: +f.level.toFixed(4), peak: +f.peak.toFixed(3), clip: +f.clip.toFixed(3) };
     if (playing) {
       const order = f.scores.map((sc, i) => i).sort((a, b) => f.scores[b] - f.scores[a]).slice(0, 3);
-      ev.id = f.smoothed; ev.best = f.bestId; ev.conf = +f.confidence.toFixed(2);
+      ev.id = f.smoothed; ev.best = f.bestId; ev.conf = +f.confidence.toFixed(2); ev.g = +f.gate.toFixed(2);
       ev.top = order.map(i => [f.templates[i].id, +f.scores[i].toFixed(2)]);
       ev.chroma = Array.from(f.chroma, v => +v.toFixed(2));
     }
@@ -463,10 +484,26 @@ practice = new PracticeMode({
   progressions: PROGRESSIONS,
   getEnabled: () => settings.get('enabledChords'),
   getDetector: () => detector,
+  getAudioContext: ensureAudioCtx,   // tempo mode clicks (a user gesture reaches this through the tempo toggle)
   onCurrent: (chord) => setVoicing(chord),
   onCalibStatus: (text) => { document.getElementById('calib-status').textContent = text; },
 });
 document.getElementById('calib-btn').addEventListener('click', () => practice?.startCalibration());
+
+// ---------- progress panel + weak-spot drilling (GET /api/stats) ----------
+const progressBody = document.getElementById('progress-body'), progressBtn = document.getElementById('progress-refresh');
+async function loadStats() {
+  progressBtn.disabled = true;
+  try {
+    const st = await progress.fetchStats();
+    practice?.setStats(st);
+    progress.render(progressBody, st);
+  } catch (err) {
+    progressBody.innerHTML = `<p class="pg-empty">no statistics: ${err.message} (serve.py provides /api/stats)</p>`;
+  } finally { progressBtn.disabled = false; }
+}
+progressBtn.addEventListener('click', loadStats);
+loadStats();
 listen = new ListenMode({
   root: document.getElementById('listen'),
   allChords: ALL_CHORDS,
