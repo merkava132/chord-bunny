@@ -105,6 +105,7 @@ const PRESETS = {
               'Cadd9', 'Dsus4', 'Dsus2', 'Asus2', 'Asus4', 'A7sus4',
               'Cmaj7', 'Fmaj7', 'Am7', 'Em7', 'G/B', 'D/F#', 'C/G'],
   // every chord in the Ultimate Guitar tab (Alterone's version), in song order
+  hotel: () => ['Am', 'E7', 'G', 'D', 'F', 'C', 'Dm'],   // Eagles — Hotel California (capo 2)
   mysong: () => ['Am', 'Asus4', 'Asus2', 'Em', 'C', 'Am7', 'G', 'F', 'Gsus4', 'Gadd11', 'G6',
                  'Dsus2', 'D', 'Eb', 'Dsus2/F#', 'Fsus4', 'Em7', 'Em9', 'Fmaj7', 'Fmaj7#11',
                  'Cmaj7', 'Cmaj7-hi', 'Bsus4', 'D6sus2'],
@@ -137,6 +138,17 @@ minHoldInput.addEventListener('change', () => {
   settings.set('minHoldMs', Number(minHoldInput.value));
   if (detector) detector.setMinHold(Number(minHoldInput.value));
 });
+// capo: shapes stay named as if open; the detector shifts its activations
+// down and the string tracker expects each string capo semitones higher
+const capoInput = document.getElementById('capo');
+capoInput.value = settings.get('capo') || 0;
+function applyCapo(n) {
+  n = Math.max(0, Math.min(7, Number(n) | 0));
+  settings.set('capo', n); capoInput.value = n;
+  detector?.setCapo(n); stringTracker?.setCapo(n);
+  practice?._renderUpcoming?.(practice._sequence());
+}
+capoInput.addEventListener('change', () => applyCapo(capoInput.value));
 
 const showDiagCb = document.getElementById('show-diagrams-cb');
 showDiagCb.checked = settings.get('showDiagrams');
@@ -373,6 +385,7 @@ async function makeDetector() {
   d.setSensitivity(sensFromSlider(settings.get('sensitivity')));
   d.setMinHold(settings.get('minHoldMs'));
   stringTracker = new StringTracker({ sampleRate: audioCtx.sampleRate, profiles: PROFILES, profilesByString: PROFILES_BY_STRING });
+  d.setCapo(settings.get('capo') || 0); stringTracker.setCapo(settings.get('capo') || 0);
   d.addConsumer({ size: stringTracker.o.fftSize, hop: stringTracker.o.hop, fn: (frame, t) => stringTracker.process(frame, t) });
   await d.init();
   _wireStringViews();
@@ -509,6 +522,7 @@ practice = new PracticeMode({
   getAudioContext: ensureAudioCtx,   // tempo mode clicks (a user gesture reaches this through the tempo toggle)
   onCurrent: (chord) => setVoicing(chord),
   onCalibStatus: (text) => { document.getElementById('calib-status').textContent = text; },
+  onCapo: (n) => applyCapo(n),
 });
 document.getElementById('calib-btn').addEventListener('click', () => practice?.startCalibration());
 

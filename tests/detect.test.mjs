@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { pitchClasses, pcKey, pcSubset, buildTemplates, scoreTemplates, confidenceOf, PC_INDEX, missingDistinguisher, ChromaWindow } from '../src/detect.js';
+import { pitchClasses, pcKey, pcSubset, buildTemplates, scoreTemplates, confidenceOf, PC_INDEX, missingDistinguisher, ChromaWindow, shiftActivations } from '../src/detect.js';
 import { CONFIG } from '../src/config.js';
 
 const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));
@@ -132,5 +132,20 @@ describe('distinguishing-note check (CONFIG.stable.thirdMin)', () => {
     w.push(1.0, chroma({ A: 0.1 }));   // older frames fall out of the window
     assert.ok(Math.abs(w.mean[PC_INDEX.A] - 0.1) < 1e-6);
     w.reset(); assert.equal(w.q.length, 0);
+  });
+});
+
+describe('shiftActivations (capo)', () => {
+  it('moves every activation down by the capo fret and zeroes the top; 0 is a no-op', () => {
+    const act = Float32Array.from([0, 0, 5, 0, 7, 0, 0, 9]);
+    assert.deepEqual(Array.from(shiftActivations(Float32Array.from(act), 2)), [5, 0, 7, 0, 0, 9, 0, 0]);
+    assert.deepEqual(Array.from(shiftActivations(Float32Array.from(act), 0)), Array.from(act));
+  });
+  it('an Am shape with a capo on 2 sounds as Bm; shifted by 2 the chroma is Am again', () => {
+    // activations on a 40..81 grid: Bm = B2 D3 F#3 B3 D4 (47 50 54 59 62) → indices 7 10 14 19 22
+    const act = new Float32Array(42); for (const i of [7, 10, 14, 19, 22]) act[i] = 1;
+    shiftActivations(act, 2, 42);
+    const on = []; for (let i = 0; i < 42; i++) if (act[i]) on.push((40 + i) % 12);
+    assert.deepEqual([...new Set(on)].sort((a, b) => a - b), [PC_INDEX.C, PC_INDEX.E, PC_INDEX.A].sort((a, b) => a - b));
   });
 });

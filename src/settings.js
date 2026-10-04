@@ -18,6 +18,7 @@ const DEFAULTS = {
   micDeviceId: '',                  // '' = browser default input
   debug: false,                     // debug panel (also ?debug=1)
   sequence: 'random',               // 'random' pairs, or a progression id from data/progressions.json
+  capo: 0,                          // fret the capo is on; shapes stay named as if open (detector shifts its activations down)
   smartPairs: true,                 // random pairs lean toward slow / missed transitions (CONFIG.smart)
   tempoOn: false,                   // tempo practice: metronome, the pair advances every bar (src/tempo.js)
   bpm: CONFIG.tempo.defaultBpm,

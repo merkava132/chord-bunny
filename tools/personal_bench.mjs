@@ -22,7 +22,7 @@ import path from 'node:path';
 import { PitchAnalyzer, frames, rms, mergeUserPartials } from '../src/dsp/analyzer.js';
 import { createHash } from 'node:crypto';
 import { decodeWav } from '../src/dsp/wav.js';
-import { buildTemplates, scoreTemplates, confidenceOf, StableRule, ChromaWindow, missingDistinguisher } from '../src/detect.js';
+import { buildTemplates, scoreTemplates, confidenceOf, StableRule, ChromaWindow, missingDistinguisher, shiftActivations } from '../src/detect.js';
 import { Featurizer, scoreModel, mixResult, loadModelFile } from '../src/model.js';
 import { CONFIG, applyOverrides, sensitivityFromSlider } from '../src/config.js';
 import { buildLabels, DEFAULT_REC, DEFAULT_TEL } from './session_labels.mjs';
@@ -131,7 +131,7 @@ function gateFrames(dir, seg) {
   return f;
 }
 // frames of one segment within [a, b) as objects; the EMA runs over the whole segment (its state survives silent frames, as in the detector)
-function framesIn(f, a, b, gf = null) {
+function framesIn(f, a, b, gf = null, capo = 0) {
   const out = [], sm = new Float32Array(NPITCH), EMA = CONFIG.detect.ema, fz = MODEL ? new Featurizer(NPITCH) : null;
   for (let i = 0; i < f.length; i += ROW) {
     const ts = f[i], level = f[i + 1], silent = level < CONFIG.detect.rmsGate;
@@ -141,7 +141,7 @@ function framesIn(f, a, b, gf = null) {
       if (fz) feat = Float32Array.from(fz.push(f.subarray(i + 2, i + 2 + NPITCH)));   // raw activations, as the detector feeds the model
     }
     if (ts < a || ts >= b) continue;
-    out.push({ ts, level, silent, chroma: silent ? null : fold(sm, new Float32Array(12)), feat, gate: gf ? gf[i / ROW] : 1 });
+    out.push({ ts, level, silent, chroma: silent ? null : fold(capo ? shiftActivations(Float32Array.from(sm), capo) : sm, new Float32Array(12)), feat, gate: gf ? gf[i / ROW] : 1 });
   }
   return out;
 }
@@ -202,7 +202,7 @@ for (const sid of sessions) {
     if (!cache.has(r.seg)) cache.set(r.seg, segFrames(dir, seg));
     if (!cache.get(r.seg)) { pruned++; continue; }   // audio gone
     if (GATE_ON && !gcache.has(r.seg)) gcache.set(r.seg, gateFrames(dir, seg));
-    const fr = framesIn(cache.get(r.seg), r.ts0 - WARMUP, r.ts1, GATE_ON ? gcache.get(r.seg) : null);
+    const fr = framesIn(cache.get(r.seg), r.ts0 - WARMUP, r.ts1, GATE_ON ? gcache.get(r.seg) : null, Number(st.capo) || 0);
     const strumTs = strums.filter(ts => ts >= r.ts0 && ts < r.ts1), n = strumTs.length;
     intervals.push({ session: sid, target: r.target, ts0: r.ts0, ts1: r.ts1, dur, strums: n, strumTs, enabled, noise, live: r.matched ? 'match' : r.shownBecause, liveMatchedAt: r.matchedAt, cand, fr,
       sens: args.sens !== undefined ? Number(args.sens) : sensitivityFromSlider(st.sensitivity ?? CONFIG.sensitivity.defaultSlider),

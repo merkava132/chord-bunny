@@ -102,17 +102,21 @@ export class StringTracker {
     this.onEvent = null;
     this.lastT = 0;
     this.lastInferred = null;
+    this.capo = 0;
     this.setVoicing([0, 0, 0, 0, 0, 0]);
   }
 
   hopSeconds() { return this.o.hop / this.sampleRate; }
+
+  // Capo on fret n: every string sounds n semitones above its shape fret.
+  setCapo(n) { this.capo = Math.max(0, n | 0); this.setVoicing(this.frets || [0, 0, 0, 0, 0, 0]); }
 
   // frets: 6 ints (low E first), -1 = muted.
   setVoicing(frets) {
     for (let s = 0; s < 6; s++) {
       const f = frets[s];
       this.muted[s] = f < 0 ? 1 : 0;
-      this.pitches[s] = TUNING[s] + Math.max(0, f);
+      this.pitches[s] = TUNING[s] + this.capo + Math.max(0, f);
     }
     for (let s = 0; s < 6; s++) {
       this.doubled[s] = 0;

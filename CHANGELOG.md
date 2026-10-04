@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.3.0 — 2026-10-03
+
+- **Hotel California** (Eagles, capo 2, 73 bpm): verse loop, chorus and the
+  whole song under "play"; a "hotel california" preset ticks its seven
+  chords (all already in the set).
+- **Capo** setting (settings → detection): the detector shifts its
+  activations down by the capo fret and the string tracker expects each
+  string that much higher, so shapes keep their open names. Progressions
+  can declare `capo` / `bpm` / `beatsPerChord`; selecting one sets the tempo
+  controls and offers a one-tap capo chip. The personal benchmark honours
+  the capo from the session's settings.
+
 ## v1.2.1 — 2026-10-03
 
 - **Keepers**: `tools/curate.mjs` + a curator thread in serve.py protect

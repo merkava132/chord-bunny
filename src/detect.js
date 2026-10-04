@@ -92,6 +92,16 @@ export class ChromaWindow {
   }
 }
 
+// Capo: the player's shapes are named as if open, but every string sounds
+// `n` semitones higher. The dictionary is a semitone grid, so shifting the
+// activations down by n bins makes everything downstream — chroma, templates,
+// the distinguishing-note check, the model features — see the open shape.
+export function shiftActivations(act, n, nP = act.length) {
+  if (!n) return act;
+  for (let i = 0; i < nP; i++) act[i] = i + n < nP ? act[i + n] : 0;
+  return act;
+}
+
 function mode(arr) {
   const counts = new Map();
   for (const v of arr) counts.set(v, (counts.get(v) || 0) + 1);
@@ -206,6 +216,7 @@ export class ChordDetector {
     this.history = [];
     this.stable = new StableRule();
     this.chromaWin = new ChromaWindow();   // for the distinguishing-note check (CONFIG.stable.thirdMin)
+    this.capo = 0;                         // settings.capo, see shiftActivations
     this.gate = new GuitarGate();   // guitar-likeness (CONFIG.gate)
     this.minHoldMs = CONFIG.stable.minHoldMs;
     this.sensitivity = 0.5;
@@ -278,6 +289,7 @@ export class ChordDetector {
   }
 
   setSensitivity(v) { this.sensitivity = v; }
+  setCapo(n) { this.capo = Math.max(0, n | 0); this._reset(); }
   setMinHold(ms) { this.minHoldMs = ms; this.stable.win = ms / 1000 * CONFIG.stable.win; }
 
   // Swap the personal profile (after relearning) and rebuild the templates.
@@ -332,7 +344,8 @@ export class ChordDetector {
     }
     const an = this.analyzer;
     const act = an.analyze(frame);
-    const gate = CONFIG.gate.enabled ? this.gate.push(an.residual(act)) : 1;   // guitar-likeness of this frame
+    const gate = CONFIG.gate.enabled ? this.gate.push(an.residual(act)) : 1;   // guitar-likeness of this frame (residual needs the unshifted fit)
+    if (this.capo) shiftActivations(act, this.capo, an.nP);
     for (let i = 0; i < an.nP; i++) this.smooth[i] = EMA * this.smooth[i] + (1 - EMA) * act[i];
     const ch = an.chroma(this.smooth, this.chroma);
 

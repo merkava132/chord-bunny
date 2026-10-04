@@ -150,8 +150,14 @@ The "play" selector in practice switches from random related pairs to a
 progression from `data/progressions.json` (Girls Dead Monster's *My Song*
 in eight sections, numbered in learning order — intro riff, both verse
 lines, pre-chorus, chorus, chorus tail, interlude, outro — plus the whole
-song in order; I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
-D). The progression's chords are always detection candidates, whether or not
+song in order; the Eagles' *Hotel California* as verse loop, chorus and the
+whole song; I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
+D). A progression can carry `capo`, `bpm` and `beatsPerChord`: selecting it
+sets the tempo controls, and the "then" strip shows a `capo 2 · tap to set`
+chip until detection is set for that capo (settings → detection → capo;
+shapes keep their open names, the detector listens that many semitones
+higher and the string tracker expects each string that much higher too).
+Calibrate without a capo. The progression's chords are always detection candidates, whether or not
 they are ticked, so the surest way to learn a section is to clear the chord
 set and pick the section; "new pair" restarts it. Add a song by appending
 `{ id, name, chords: [ids] }` — every id must exist in chords.json.

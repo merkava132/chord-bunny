@@ -50,3 +50,15 @@ describe('StringTracker muted-string fundamental check', () => {
     assert.ok(hit.f0 >= STRING_DEFAULTS.mutedF0Prom);
   });
 });
+
+describe('capo', () => {
+  it('setCapo raises every fretted string by the capo fret and keeps muted strings muted', () => {
+    const t = new StringTracker({ sampleRate: SR });
+    t.setVoicing([-1, 0, 2, 2, 1, 0]);   // Am shape
+    t.setCapo(2);
+    assert.deepEqual(Array.from(t.pitches), [40 + 2, 45 + 2, 50 + 4, 55 + 4, 59 + 3, 64 + 2]);
+    assert.deepEqual(Array.from(t.muted), [1, 0, 0, 0, 0, 0]);
+    t.setCapo(0);
+    assert.deepEqual(Array.from(t.pitches), [40, 45, 52, 57, 60, 64]);
+  });
+});

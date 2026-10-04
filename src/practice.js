@@ -27,9 +27,10 @@ import { Enrollment, buildSteps, OnsetDetector } from './enroll.js';
 import { Metronome, Creep } from './tempo.js';
 
 export class PracticeMode {
-  constructor({ root, allChords, getEnabled, getDetector, getAudioContext = null, onCurrent = null, progressions = [], onCalibStatus = null }) {
+  constructor({ root, allChords, getEnabled, getDetector, getAudioContext = null, onCurrent = null, progressions = [], onCalibStatus = null, onCapo = null }) {
     this.root = root;
     this.onCurrent = onCurrent;
+    this.onCapo = onCapo;             // (fret) → main.js applies the capo setting to the detector and the tracker
     this.getAudioContext = getAudioContext;   // async → AudioContext, for the metronome clicks
     this.onCalibStatus = onCalibStatus;   // (text) → the status line in the settings "calibrate" panel
     this.allChords = allChords;
@@ -146,7 +147,18 @@ export class PracticeMode {
   }
 
   // settings.sequence changed (select): restart with the new mode
-  onSequenceChanged() { this._syncCandidates(); this.rerollPair(true); }
+  onSequenceChanged() {
+    const p = this._progression();
+    if (p?.bpm && this.bpmInput) { this.bpmInput.value = p.bpm; this.bpmInput.dispatchEvent(new Event('change')); }   // the tab's tempo
+    if (p?.beatsPerChord && this.beatsSel) { this.beatsSel.value = String(p.beatsPerChord); this.beatsSel.dispatchEvent(new Event('change')); }
+    this._syncCandidates(); this.rerollPair(true);
+  }
+
+  // The selected progression object (capo, bpm, …), or null for random pairs.
+  _progression() {
+    const id = settings.get('sequence');
+    return id && id !== 'random' ? this.progressions.find(x => x.id === id) || null : null;
+  }
 
   disable() {
     this._clearFeedback();
@@ -653,6 +665,14 @@ export class PracticeMode {
     const chips = [];
     for (let k = 2; k <= 5 && k < n; k++) {
       const c = document.createElement('span'); c.className = 'chip'; c.textContent = seq[(i + k) % n].name; chips.push(c);
+    }
+    // the tab's capo: detection must know, or an Am shape with a capo on 2 is heard as Bm
+    const p = this._progression();
+    if (p?.capo) {
+      const c = document.createElement('span'); c.className = 'chip capo';
+      if ((Number(settings.get('capo')) || 0) === p.capo) { c.textContent = `capo ${p.capo} ✓`; c.title = 'detection is set for this capo (settings → detection)'; }
+      else { c.textContent = `capo ${p.capo} · tap to set`; c.title = 'the tab plays with a capo; tap so detection hears the shapes as named'; c.classList.add('todo'); c.addEventListener('click', () => { this.onCapo?.(p.capo); this._renderUpcoming(seq); }); }
+      chips.push(c);
     }
     this.upcomingChips.replaceChildren(...chips);
     this.upcomingPos.textContent = `${i + 1} / ${n}`;
