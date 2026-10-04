@@ -152,7 +152,12 @@ in eight sections, numbered in learning order — intro riff, both verse
 lines, pre-chorus, chorus, chorus tail, interlude, outro — plus the whole
 song in order; the Eagles' *Hotel California* as verse loop, chorus and the
 whole song; I–V–vi–IV, the royal road, sus colour loops, ii–V–I, Canon in
-D). A progression can carry `capo`, `bpm` and `beatsPerChord`: selecting it
+D). A whole song carries `sections` (`end: true`): a strip under the pair
+shows intro · verse 1 · chorus … with the current section lit and its
+position, and after the last chord the song **ends** — the clocks stop, a
+card shows chords detected, time and clean bars, and "play again" restarts
+it. Section loops (verse loop, chorus) keep looping. A progression can
+carry `capo`, `bpm` and `beatsPerChord`: selecting it
 sets the tempo controls, and the "then" strip shows a `capo 2 · tap to set`
 chip until detection is set for that capo (settings → detection → capo;
 shapes keep their open names, the detector listens that many semitones

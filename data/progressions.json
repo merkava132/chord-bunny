@@ -285,7 +285,221 @@
    "Cmaj7-hi",
    "D6sus2",
    "Fmaj7#11"
-  ]
+  ],
+  "sections": [
+   {
+    "name": "intro",
+    "chords": [
+     "Am",
+     "Asus4",
+     "Asus2",
+     "Am",
+     "Am",
+     "Asus4",
+     "Em"
+    ]
+   },
+   {
+    "name": "verse 1",
+    "chords": [
+     "C",
+     "Em",
+     "Am7",
+     "Em",
+     "Am",
+     "G",
+     "F",
+     "Gsus4",
+     "G",
+     "F",
+     "G6",
+     "F",
+     "G",
+     "F",
+     "Em",
+     "Am",
+     "G",
+     "C",
+     "Em",
+     "Am7",
+     "Em",
+     "Am",
+     "G",
+     "F",
+     "Gsus4",
+     "G",
+     "F",
+     "G6",
+     "F",
+     "G",
+     "F",
+     "Em",
+     "Am",
+     "G"
+    ]
+   },
+   {
+    "name": "pre-chorus",
+    "chords": [
+     "G",
+     "C",
+     "Dsus2",
+     "C",
+     "F",
+     "G",
+     "Am",
+     "Dsus2",
+     "C",
+     "Am",
+     "Eb"
+    ]
+   },
+   {
+    "name": "chorus",
+    "chords": [
+     "G",
+     "F",
+     "Em",
+     "Dsus2",
+     "D",
+     "C",
+     "Dsus2/F#",
+     "G",
+     "Fsus4",
+     "F",
+     "G",
+     "F",
+     "Em",
+     "Dsus2",
+     "D",
+     "C",
+     "Dsus2/F#"
+    ]
+   },
+   {
+    "name": "chorus tail",
+    "chords": [
+     "Em7",
+     "Em9",
+     "Fmaj7",
+     "Fmaj7#11",
+     "Fmaj7",
+     "Em7",
+     "Em9",
+     "Fmaj7",
+     "Fmaj7#11",
+     "Fmaj7",
+     "G"
+    ]
+   },
+   {
+    "name": "interlude",
+    "chords": [
+     "Asus4",
+     "Asus2",
+     "F",
+     "Gsus4",
+     "Asus4",
+     "Asus2",
+     "F",
+     "Gsus4",
+     "F",
+     "G"
+    ]
+   },
+   {
+    "name": "verse 2",
+    "chords": [
+     "C",
+     "Em",
+     "Am7",
+     "Em",
+     "Am",
+     "G",
+     "F",
+     "Gsus4",
+     "G",
+     "F",
+     "G6",
+     "F",
+     "G",
+     "F",
+     "Em",
+     "Am",
+     "G"
+    ]
+   },
+   {
+    "name": "pre-chorus",
+    "chords": [
+     "G",
+     "C",
+     "Dsus2",
+     "C",
+     "F",
+     "G",
+     "Am",
+     "Dsus2",
+     "C",
+     "Am",
+     "Eb"
+    ]
+   },
+   {
+    "name": "chorus",
+    "chords": [
+     "G",
+     "F",
+     "Em",
+     "Dsus2",
+     "D",
+     "C",
+     "Dsus2/F#",
+     "G",
+     "Fsus4",
+     "F",
+     "G",
+     "F",
+     "Em",
+     "Dsus2",
+     "D",
+     "C",
+     "Dsus2/F#"
+    ]
+   },
+   {
+    "name": "chorus tail",
+    "chords": [
+     "Em7",
+     "Em9",
+     "Fmaj7",
+     "Fmaj7#11",
+     "Fmaj7",
+     "Em7",
+     "Em9",
+     "Fmaj7",
+     "Fmaj7#11",
+     "Fmaj7",
+     "Em7",
+     "Em9",
+     "Fmaj7",
+     "Fmaj7#11",
+     "Fmaj7",
+     "G"
+    ]
+   },
+   {
+    "name": "outro",
+    "chords": [
+     "Asus2",
+     "Bsus4",
+     "Cmaj7-hi",
+     "D6sus2",
+     "Fmaj7#11"
+    ]
+   }
+  ],
+  "end": true
  },
  {
   "id": "hotel-verse",
@@ -448,7 +662,170 @@
   ],
   "capo": 2,
   "bpm": 73,
-  "beatsPerChord": 4
+  "beatsPerChord": 4,
+  "sections": [
+   {
+    "name": "intro",
+    "chords": [
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7",
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   },
+   {
+    "name": "verse 1",
+    "chords": [
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7",
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   },
+   {
+    "name": "chorus",
+    "chords": [
+     "F",
+     "C",
+     "E7",
+     "Am",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   },
+   {
+    "name": "verse 2",
+    "chords": [
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7",
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   },
+   {
+    "name": "chorus",
+    "chords": [
+     "F",
+     "C",
+     "E7",
+     "Am",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   },
+   {
+    "name": "verse 3",
+    "chords": [
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7",
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   },
+   {
+    "name": "outro solo",
+    "chords": [
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7",
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7",
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   },
+   {
+    "name": "fade",
+    "chords": [
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7",
+     "Am",
+     "E7",
+     "G",
+     "D",
+     "F",
+     "C",
+     "Dm",
+     "E7"
+    ]
+   }
+  ],
+  "end": true
  },
  {
   "id": "pop-C",

@@ -60,3 +60,13 @@ export function pickNext(current, pool, rng = Math.random, bias = null) {
   }
   return options[options.length - 1];
 }
+
+// Song structure. A progression may carry `sections: [{ name, chords }]`
+// (their chords concatenate to `chords`); these give each section's range
+// over the flat list, and which section a position is in.
+export function sectionBounds(sections) {
+  const out = []; let i = 0;
+  for (const s of sections) { const n = s.chords.length; out.push({ name: s.name, start: i, end: i + n }); i += n; }
+  return out;
+}
+export function sectionAt(bounds, index) { return bounds.findIndex(s => index >= s.start && index < s.end); }

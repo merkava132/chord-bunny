@@ -20,6 +20,19 @@ describe('progressions.json', () => {
       if ('beatsPerChord' in p) assert.ok([2, 4, 8].includes(p.beatsPerChord), `${p.id}: beatsPerChord`);
     }
   });
+  it('sections concatenate to the chord list; only whole songs end', () => {
+    for (const p of P) {
+      if (p.sections) {
+        assert.deepEqual(p.sections.flatMap(s => s.chords), p.chords, `${p.id}: sections ≠ chords`);
+        for (const s of p.sections) assert.ok(s.name && s.chords.length, `${p.id}: section`);
+        assert.equal(p.end, true, `${p.id}: a song with sections should end`);
+      }
+      if ('end' in p) assert.equal(typeof p.end, 'boolean');
+    }
+    assert.deepEqual(P.find(p => p.id === 'hotel-full').sections.map(s => s.name), ['intro', 'verse 1', 'chorus', 'verse 2', 'chorus', 'verse 3', 'outro solo', 'fade']);
+    assert.equal(P.find(p => p.id === 'mysong-full').sections.length, 11);
+    assert.ok(!P.find(p => p.id === 'hotel-verse').end, 'section loops keep looping');
+  });
   it('Hotel California: verse loop, chorus and the whole song, capo 2 at 73 bpm', () => {
     const by = Object.fromEntries(P.map(p => [p.id, p]));
     assert.deepEqual(by['hotel-verse'].chords, ['Am', 'E7', 'G', 'D', 'F', 'C', 'Dm', 'E7']);

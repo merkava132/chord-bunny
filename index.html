@@ -61,10 +61,18 @@
       <span class="tempo-msg" id="tempo-msg"></span>
     </div>
     <!-- following a progression: what comes after "next" -->
+    <!-- whole songs: where we are — intro · verse 1 · chorus … (data/progressions.json `sections`) -->
+    <div class="song-map" id="song-map" hidden></div>
     <div class="upcoming" id="upcoming" hidden>
       <span class="lbl">then</span>
       <span class="chips" id="upcoming-chips"></span>
       <span class="pos" id="upcoming-pos" title="position in the progression"></span>
+    </div>
+    <!-- a whole song (`end: true`) finished: the run's numbers, play again -->
+    <div class="song-done" id="song-done" hidden>
+      <span class="lbl">song done ✓</span>
+      <span id="song-done-text"></span>
+      <button id="song-again">play again</button>
     </div>
 
     <div class="detection-bar" id="detection-bar">
@@ -263,8 +271,8 @@
 
 <footer>
   <span>just sit down and play.</span>
-  <!-- version: CHANGELOG.md is the source of truth (git tag v1.3.0) -->
-  <span class="version" title="see CHANGELOG.md">v1.3.0 "Cottontail"</span>
+  <!-- version: CHANGELOG.md is the source of truth (git tag v1.3.1) -->
+  <span class="version" title="see CHANGELOG.md">v1.3.1 "Cottontail"</span>
 </footer>
 
 <script type="module" src="src/main.js"></script>

@@ -18,7 +18,7 @@
 
 import { renderInto } from './diagrams.js';
 import { pcSubset, PC_INDEX } from './detect.js';
-import { pickNext } from './theory.js';
+import { pickNext, sectionBounds, sectionAt } from './theory.js';
 import * as settings from './settings.js';
 import * as telemetry from './telemetry.js';
 import { CONFIG } from './config.js';
@@ -54,6 +54,12 @@ export class PracticeMode {
     this.coachEl     = root.querySelector('#coach-hint');
     this.timerEl     = root.querySelector('#timer-display');
     this.feedbackEl  = root.querySelector('#feedback');
+    this.songMapEl   = root.querySelector('#song-map');        // section strip for a progression with `sections`
+    this.songDoneEl  = root.querySelector('#song-done');       // end card for a progression with `end: true`
+    this.songDoneText = root.querySelector('#song-done-text');
+    root.querySelector('#song-again')?.addEventListener('click', () => this.rerollPair(true));
+    this.run = null;                  // { startedAt, shown, matched, bars, clean } for the current progression run
+    this.done = false;                // a whole song finished; waiting for "play again" 
     this.calibBar    = root.querySelector('#calib-bar');
     this.calibText   = root.querySelector('#calib-text');
 
@@ -152,6 +158,50 @@ export class PracticeMode {
     if (p?.bpm && this.bpmInput) { this.bpmInput.value = p.bpm; this.bpmInput.dispatchEvent(new Event('change')); }   // the tab's tempo
     if (p?.beatsPerChord && this.beatsSel) { this.beatsSel.value = String(p.beatsPerChord); this.beatsSel.dispatchEvent(new Event('change')); }
     this._syncCandidates(); this.rerollPair(true);
+  }
+
+  // ---- song structure: the section strip, and the end of a whole song ----
+  _sectionBounds() { const p = this._progression(); return p?.sections?.length ? sectionBounds(p.sections) : null; }
+
+  _renderSections() {
+    if (!this.songMapEl) return;
+    const b = this._sectionBounds(), seq = this._sequence();
+    const show = !!b && !!seq && !this.calib && !this.done;
+    this.songMapEl.hidden = !show;
+    if (!show) return;
+    const n = seq.length, i = ((this.seqIndex % n) + n) % n, cur = sectionAt(b, i);
+    this.songMapEl.replaceChildren(...b.map((s, k) => {
+      const el = document.createElement('span');
+      el.className = 'sec' + (k < cur ? ' done' : k === cur ? ' on' : '');
+      el.textContent = k === cur ? `${s.name} ${i - s.start + 1}/${s.end - s.start}` : s.name;
+      el.title = `${s.name}: ${s.end - s.start} chord${s.end - s.start === 1 ? '' : 's'}`;
+      return el;
+    }));
+  }
+
+  // The last chord of a progression with `end: true` was advanced past:
+  // stop the clocks, show the run's numbers, wait for "play again".
+  _finishSong() {
+    const r = this.run || { startedAt: performance.now(), shown: 0, matched: 0, bars: 0, clean: 0 };
+    const secs = Math.round((performance.now() - r.startedAt) / 1000), mm = Math.floor(secs / 60), ss = String(secs % 60).padStart(2, '0');
+    this.done = true;
+    if (this.timerHandle) clearInterval(this.timerHandle);
+    this.timerHandle = null; this.timerEl.hidden = true;
+    if (this.tempo) this._tempoStop();
+    this._clearFeedback();
+    this.coach.setTarget(null, telemetry.now());
+    this.current = null; this.next = null; this.lastMatchIds = null;
+    this.curEl.classList.remove('matched', 'held', 'beat');
+    this.curName.textContent = 'done ✓'; this.curMeta.textContent = this._progression()?.name || ''; this.curDiagram.innerHTML = '';
+    this.nextName.textContent = '—'; this.nextMeta.textContent = ''; this.nextDiagram.innerHTML = '';
+    if (this.onCurrent) this.onCurrent(null);
+    this.upcomingEl.hidden = true; this.songMapEl.hidden = true;
+    const parts = [`${r.matched} of ${r.shown} chords detected`, `${mm}:${ss}`];
+    if (r.bars) parts.push(`${Math.round(100 * r.clean / r.bars)}% clean bars`);
+    if (this.songDoneText) this.songDoneText.textContent = parts.join(' · ');
+    if (this.songDoneEl) this.songDoneEl.hidden = false;
+    this.hintEl.textContent = 'song finished — play again, or pick another progression';
+    telemetry.log('song-done', { ts: this._ts(), sequence: settings.get('sequence'), chords: r.shown, matched: r.matched, bars: r.bars, clean: r.clean, durationSec: secs });
   }
 
   // The selected progression object (capo, bpm, …), or null for random pairs.
@@ -282,6 +332,8 @@ export class PracticeMode {
     if (this._tempoOn()) this._tempoRestart();   // a new pair starts with a count-in
     const seq = this._sequence();
     if (seq) {   // restart the progression from the top
+      this.done = false; if (this.songDoneEl) this.songDoneEl.hidden = true;
+      this.run = { startedAt: performance.now(), shown: 0, matched: 0, bars: 0, clean: 0 };
       this.seqIndex = 0;
       this.current = this._seqAt(0);
       this.next = this._seqAt(1);
@@ -310,12 +362,16 @@ export class PracticeMode {
 
   // reason: null (detected / manual / the seconds timer decides), or 'bar' from tempo mode
   advance(reason = null) {
+    if (this.done) return;   // a finished song waits for "play again"
     const timedOut = !reason && settings.get('timerEnabled') && performance.now() >= this.timerEnd;
     if (!reason) reason = timedOut ? 'timer' : 'advance';
     const byTime = timedOut || reason === 'bar';
     const prev = this.current, prevTs = this.shownTs, heard = this.lastMatchIds, wasMatched = this.matchedThisTarget;
     this.lastMatchIds = null;
     if (this._sequence()) {
+      if (this.run && prev) { this.run.shown++; if (wasMatched) this.run.matched++; }
+      const p = this._progression();
+      if (p?.end && this.seqIndex + 1 >= this._sequence().length) { this._finishSong(); return; }   // whole songs end
       this.seqIndex++;
       this.current = this._seqAt(this.seqIndex);
       this.next = this._seqAt(this.seqIndex + 1);
@@ -456,6 +512,7 @@ export class PracticeMode {
       if (seq) this.seqPosEl.textContent = `${(this.seqIndex % seq.length) + 1} / ${seq.length}`;
     }
     this._renderUpcoming(seq);
+    this._renderSections();
     this.curEl.classList.remove('held');
     this.curName.textContent  = cur  ? cur.name  : '—';
     this.nextName.textContent = next ? next.name : '—';
@@ -609,6 +666,7 @@ export class PracticeMode {
     const scored = !!this.getDetector()?.running;
     const clean = this.current ? (scored ? this.matchedThisTarget : null) : null;
     telemetry.log('tempo', { ts: this._ts(), bpm: t.metro.bpm, beatsPerChord: t.metro.beatsPerBar, bar, target: this.current?.id ?? null, clean });
+    if (this.run) { this.run.bars++; if (clean) this.run.clean++; }
     const delta = this.creep.record(clean);
     if (delta && settings.get('creep') !== false) {
       const from = t.metro.bpm, bpm = this.creep.apply(from, delta);

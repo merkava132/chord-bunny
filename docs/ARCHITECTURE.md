@@ -215,6 +215,7 @@ Batched every 2 s to `POST /api/telemetry?session=<id>` and appended to
 | `label` | `ts, target, kind` (`fp`/`fn`), `heard[], ts0, ts1` | the player pressed N (false match) or Y (missed chord) after an advance |
 | `tempo` | `ts, bpm, beatsPerChord, bar, target, clean` (true/false/null) | tempo mode: a bar ended |
 | `tempo-change` | `ts, from, bpm, reason` (`clean-run`/`miss-run`) | creep changed the tempo |
+| `song-done` | `ts, sequence, chords, matched, bars, clean, durationSec` | a progression with `end: true` finished |
 | `enroll` | `ts, kind` (`chord`/`string`), `chord` or `string`, `ts0, ts1, strums` or `plucks` | a calibration step was captured |
 
 `tools/telemetry_report.mjs` turns a file into a session summary;

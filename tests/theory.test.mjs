@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { relatedness, pickNext } from '../src/theory.js';
+import { relatedness, pickNext, sectionBounds, sectionAt } from '../src/theory.js';
 
 const CHORDS = JSON.parse(fs.readFileSync(new URL('../data/chords.json', import.meta.url)));
 const by = Object.fromEntries(CHORDS.map(c => [c.id, c]));
@@ -49,5 +49,15 @@ describe('theory.pickNext with a bias (weak-spot drilling)', () => {
   it('an unrelated chord stays unrelated however weak the transition', () => {
     const far = [by.C, by['F#m'], by.G];
     for (let i = 0; i < 200; i++) assert.notEqual(pickNext(by.C, far, Math.random, (c) => c.id === 'F#m' ? 100 : 1).id, 'F#m');
+  });
+});
+
+describe('sectionBounds / sectionAt', () => {
+  const b = sectionBounds([{ name: 'intro', chords: ['Am', 'E7'] }, { name: 'verse', chords: ['G', 'D', 'F'] }, { name: 'outro', chords: ['C'] }]);
+  it('lays the sections end to end over the flat chord list', () => {
+    assert.deepEqual(b, [{ name: 'intro', start: 0, end: 2 }, { name: 'verse', start: 2, end: 5 }, { name: 'outro', start: 5, end: 6 }]);
+  });
+  it('finds the section of a position; out of range is -1', () => {
+    assert.equal(sectionAt(b, 0), 0); assert.equal(sectionAt(b, 1), 0); assert.equal(sectionAt(b, 2), 1); assert.equal(sectionAt(b, 5), 2); assert.equal(sectionAt(b, 6), -1);
   });
 });

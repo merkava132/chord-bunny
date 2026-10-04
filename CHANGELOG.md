@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.1 — 2026-10-03
+
+- **Songs end.** A progression with `end: true` (both whole songs) stops
+  after its last chord: timer and metronome stop, a card shows chords
+  detected, time and clean bars, "play again" restarts. Section loops still
+  loop. Telemetry `song-done`.
+- **Section map**: whole songs carry `sections`; a strip under the pair
+  shows intro · verse 1 · chorus … with the current section lit and its
+  position (`sectionBounds` / `sectionAt` in src/theory.js).
+
 ## v1.3.0 — 2026-10-03
 
 - **Hotel California** (Eagles, capo 2, 73 bpm): verse loop, chorus and the
