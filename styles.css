@@ -560,4 +560,6 @@ footer .version { margin-left: 14px; font-family: var(--mono); opacity: 0.55; }
 .song-done .lbl { color: var(--accent-2); }
 .song-done button { font: inherit; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
 .song-done button:hover { background: var(--bg-2); }
-@media (max-width: 600px) { .song-map { gap: 4px; font-size: 0.72rem; } .song-map .sec { padding: 1px 6px; } }
+@media (max-width: 600px) { .song-map { gap: 4px; font-size: 0.72rem; } .song-map .sec { padding: 1px 6px; } .song-done { flex-direction: column; gap: 8px; padding: 0 12px; text-align: center; } }
+/* a finished song: only the done card, no next, no string meter */
+#practice.done .chord-card.next, #practice.done .arrow, #practice.done .strings-view { display: none; }

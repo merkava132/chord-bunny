@@ -185,6 +185,7 @@ export class PracticeMode {
     const r = this.run || { startedAt: performance.now(), shown: 0, matched: 0, bars: 0, clean: 0 };
     const secs = Math.round((performance.now() - r.startedAt) / 1000), mm = Math.floor(secs / 60), ss = String(secs % 60).padStart(2, '0');
     this.done = true;
+    this.root.classList.add('done');   // hides the next card and the string meter (styles.css)
     if (this.timerHandle) clearInterval(this.timerHandle);
     this.timerHandle = null; this.timerEl.hidden = true;
     if (this.tempo) this._tempoStop();
@@ -329,6 +330,7 @@ export class PracticeMode {
   _seqAt(i) { const seq = this._sequence(); return seq ? seq[((i % seq.length) + seq.length) % seq.length] : null; }
 
   rerollPair(fresh = false) {
+    this.root.classList.remove('done');
     if (this._tempoOn()) this._tempoRestart();   // a new pair starts with a count-in
     const seq = this._sequence();
     if (seq) {   // restart the progression from the top
