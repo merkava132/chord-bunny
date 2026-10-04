@@ -240,6 +240,29 @@ that held only the tail is dropped). `start.sh` puts recordings on
 `/mnt/aegis/chord-bunny/recordings` when that drive exists; the server prunes
 oldest-first past `--max-rec-mb` (20000; only the WAVs, never the segment index or caches).
 
+## Keepers (what survives the prune)
+
+`tools/curate.mjs` scores each recorded segment from the session's telemetry:
+calibration (`enroll`) windows +100 and player-labelled (`label`) windows +80
+are tier A and always kept; rare-chord matches +50 each (cap 100), practice
+matches +10 each (cap 40), misses +5 each (cap 15); segments inside an
+annotated noise range score 0 except one small sample per range; segments
+with nothing of interest score 0 and are never kept. Tier B fills a 4 GB
+budget by score then recency, at most 40% per session. Keepers are hard
+links into `keep/<session>/` on the same filesystem (so they cost nothing
+and `prune()` skips them — it ignores files with `st_nlink > 1` and
+sessions carrying a `.keep` marker); the best 1 GB is copied to
+`data/user/keep/` on the root disk; the telemetry and `data/user/*.json`
+are mirrored into both, because audio without its labels is noise.
+`keep/<session>/keep.jsonl` says why each segment is there;
+`keep/manifest.json` has the totals (also in `GET /api/status`). serve.py
+schedules a run 5 s after start, 60 s after an `enroll`/`label` batch,
+5 min after a `match` batch, and whenever audio arrives more than 30 min
+after the last run. Re-runs only add; `--gc` drops the lowest tier B when
+the budget shrinks. Lesson (2026-09-25): the first calibration run's audio
+was already gone before this existed — the prune is oldest-first and a tab
+left open with the mic on fills the cap in an afternoon.
+
 ## serve.py
 
 | | |
@@ -262,6 +285,7 @@ leaves the machine; `python -m http.server` would just drop the POSTs.
 | `eval_listen.mjs` | listen display accuracy vs flicker for show/gap holds | GuitarSet |
 | `calibrate.mjs` | confidence threshold → coverage / precision | GuitarSet |
 | `eval_strings.mjs` | per-string presence / onsets / direction vs hex-pickup GT | GuitarSet |
+| `curate.mjs` | which recordings are worth keeping (and why), hard-linked out of the prune's reach, best mirrored to the other disk | recordings + telemetry |
 | `stats.mjs` | per chord / transition / day aggregates, the player's slowest transitions (also `GET /api/stats`) | telemetry |
 | `learn_response.mjs` | this guitar + mic's partial amplitudes per open string and a frequency-response correction; is the low-E fundamental there at all | calibration plucks |
 | `gate_features.mjs`, `gate_fit.mjs` | per-frame features and their separation of guitar vs non-guitar audio | recordings |

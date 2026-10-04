@@ -33,13 +33,18 @@ def wav_header(n_bytes, sr, channels=1, bits=16):
 def prune(rec_dir, max_bytes):
     # Only the audio is pruned (oldest first); segments.jsonl, labels and
     # tool caches stay so a pruned session still shows what was recorded.
+    # Protected: a segment the curator hard-linked into the keep dir
+    # (st_nlink > 1 — deleting it would free nothing), and every file of a
+    # session with a `.keep` marker (touch it by hand to pin a session).
     files = []
     for d, _, names in os.walk(rec_dir):
+        if '.keep' in names: continue
         for n in names:
             if not (n.startswith('seg-') and n.endswith('.wav')): continue
             p = os.path.join(d, n)
             try: st = os.stat(p)
             except OSError: continue
+            if st.st_nlink > 1: continue
             files.append((st.st_mtime, st.st_size, p))
     total = sum(s for _, s, _ in files)
     files.sort()
@@ -49,6 +54,37 @@ def prune(rec_dir, max_bytes):
         try: os.remove(p); total -= size; removed += 1
         except OSError: pass
     return removed, total
+
+
+# ---- curator: keep the recordings worth keeping before the prune gets them ----
+# tools/curate.mjs scores every recorded segment from its session's telemetry
+# (calibration takes, player-labelled windows, rare-chord and practice
+# matches), hard-links the keepers into keep_dir (zero bytes, prune-proof) and
+# mirrors the best to another disk. It runs shortly after the server starts,
+# a minute after a calibration/label event arrives, a few minutes after
+# matches, and at least every half hour while audio is being uploaded.
+_curate = {'due': 0.0, 'last': 0.0, 'running': False, 'enabled': True, 'keep_dir': None, 'log': ''}
+
+def schedule_curate(delay):
+    if not _curate['enabled']: return
+    due = time.time() + delay
+    if not _curate['due'] or due < _curate['due']: _curate['due'] = due
+
+def _curator_loop():
+    while True:
+        time.sleep(10)
+        if not _curate['due'] or time.time() < _curate['due'] or _curate['running']: continue
+        _curate['due'] = 0.0; _curate['running'] = True
+        try:
+            cmd = ['node', os.path.join(ROOT, 'tools', 'curate.mjs'), '--quiet', '--rec-dir=' + Handler.rec_dir,
+                   '--keep-dir=' + _curate['keep_dir'], '--tel-dir=' + TELEMETRY_DIR]
+            r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=900)
+            _curate['log'] = (r.stdout or r.stderr).strip()[-400:]
+            print('curate: ' + _curate['log'].replace('\n', ' | '), file=sys.stderr, flush=True)
+        except Exception as e:      # noqa: BLE001
+            _curate['log'] = f'curate failed: {e!r}'; print(_curate['log'], file=sys.stderr, flush=True)
+        finally:
+            _curate['last'] = time.time(); _curate['running'] = False
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -83,8 +119,13 @@ class Handler(SimpleHTTPRequestHandler):
         if urlsplit(self.path).path == '/api/status':
             sessions = sorted(f[:-6] for f in os.listdir(TELEMETRY_DIR)) if os.path.isdir(TELEMETRY_DIR) else []
             _, total = prune(self.rec_dir, float('inf')) if os.path.isdir(self.rec_dir) else (0, 0)
+            keep = {}
+            try:
+                with open(os.path.join(_curate['keep_dir'] or '', 'manifest.json')) as f: m = json.load(f)
+                keep = {'dir': _curate['keep_dir'], 'segments': m.get('segments'), 'bytes': m.get('bytes'), 'tiers': m.get('tiers'), 'updatedAt': m.get('updatedAt')}
+            except (OSError, ValueError, TypeError): pass
             return self._reply(200, {'telemetryDir': TELEMETRY_DIR, 'recDir': self.rec_dir, 'recBytes': total,
-                                     'maxRecBytes': self.max_rec_bytes, 'sessions': sessions[-20:]})
+                                     'maxRecBytes': self.max_rec_bytes, 'sessions': sessions[-20:], 'keep': keep, 'curateLog': _curate['log']})
         return super().do_GET()
 
     def do_POST(self):
@@ -104,6 +145,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if text and not text.endswith('\n'): text += '\n'
                 with lock, open(os.path.join(TELEMETRY_DIR, session + '.jsonl'), 'a') as f:
                     f.write(text)
+                if '"type":"enroll"' in text or '"type":"label"' in text: schedule_curate(60)
+                elif '"type":"match"' in text: schedule_curate(300)
                 return self._reply(204)
             if url.path == '/api/audio':
                 seg = int(q.get('seg', 0)); sr = int(q.get('sr', 48000))
@@ -116,6 +159,7 @@ class Handler(SimpleHTTPRequestHandler):
                         'bytes': len(body), 'wall': time.time()}
                 with lock, open(os.path.join(d, 'segments.jsonl'), 'a') as f:
                     f.write(json.dumps(meta) + '\n')
+                if time.time() - _curate['last'] > 1800: schedule_curate(60)   # keep up while audio keeps coming
                 removed, total = prune(self.rec_dir, self.max_rec_bytes)
                 if removed: print(f'pruned {removed} old recording(s); {total / 1e6:.0f} MB kept', file=sys.stderr)
                 return self._reply(204)
@@ -205,13 +249,21 @@ def main():
     ap.add_argument('--rec-dir', default=os.environ.get('CB_REC_DIR') or Handler.rec_dir)
     # 20 GB: at 3 GB a tab left open with the mic on for an afternoon pruned every earlier practice take (2026-09-25)
     ap.add_argument('--max-rec-mb', type=int, default=int(os.environ.get('CB_MAX_REC_MB', 20000)))
+    ap.add_argument('--keep-dir', default=os.environ.get('CB_KEEP_DIR'), help='curated keepers (default: <rec-dir>/../keep)')
+    ap.add_argument('--no-curate', action='store_true', help='do not run tools/curate.mjs in the background')
     a = ap.parse_args()
     Handler.rec_dir = os.path.abspath(a.rec_dir)
     Handler.max_rec_bytes = a.max_rec_mb * 10**6
     os.makedirs(Handler.rec_dir, exist_ok=True)
     os.makedirs(TELEMETRY_DIR, exist_ok=True)
+    _curate['enabled'] = not a.no_curate
+    _curate['keep_dir'] = os.path.abspath(a.keep_dir) if a.keep_dir else (
+        os.path.join(os.path.dirname(Handler.rec_dir), 'keep') if os.path.basename(Handler.rec_dir) == 'recordings' else Handler.rec_dir + '-keep')
+    if _curate['enabled']:
+        threading.Thread(target=_curator_loop, daemon=True).start()
+        schedule_curate(5)
     srv = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
-    print(f'chord-bunny → http://localhost:{a.port}/   telemetry: {TELEMETRY_DIR}   recordings: {Handler.rec_dir} (cap {a.max_rec_mb} MB)', flush=True)
+    print(f'chord-bunny → http://localhost:{a.port}/   telemetry: {TELEMETRY_DIR}   recordings: {Handler.rec_dir} (cap {a.max_rec_mb} MB)   keep: {_curate["keep_dir"]}{"" if _curate["enabled"] else " (curator off)"}', flush=True)
     try: srv.serve_forever()
     except KeyboardInterrupt: pass
 

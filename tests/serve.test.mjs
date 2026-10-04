@@ -11,17 +11,18 @@ const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const freePort = () => new Promise(res => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
-let proc, base, recDir, session;
+let proc, base, recDir, telDir, session;
 before(async () => {
   const port = await freePort();
   recDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-serve-'));
+  telDir = path.join(recDir, 'telemetry');   // own telemetry dir: the live app writing to ./telemetry mid-test changed the stats cache key
   session = `fixture-serve-${process.pid}`;
-  proc = spawn('python3', ['serve.py', '--port', String(port), '--rec-dir', recDir, '--max-rec-mb', '1'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  proc = spawn('python3', ['serve.py', '--port', String(port), '--rec-dir', recDir, '--max-rec-mb', '1', '--no-curate'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CB_TEL_DIR: telDir } });
   base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 50; i++) { try { const r = await fetch(`${base}/api/status`); if (r.ok) return; } catch {} await wait(100); }
   throw new Error('serve.py did not come up');
 });
-after(() => { proc.kill(); fs.rmSync(recDir, { recursive: true, force: true }); fs.rmSync(path.join(ROOT, 'telemetry', session + '.jsonl'), { force: true }); });
+after(() => { proc.kill(); fs.rmSync(recDir, { recursive: true, force: true }); });
 
 const wav = (seconds, sr = 48000) => new Uint8Array(seconds * sr * 2);   // silent int16 PCM
 
@@ -57,7 +58,7 @@ describe('serve.py', () => {
     const url = `${base}/api/telemetry?session=${session}`;
     assert.equal((await fetch(url, { method: 'POST', body: '{"t":0,"type":"a"}\n' })).status, 204);
     assert.equal((await fetch(url, { method: 'POST', body: '{"t":1,"type":"b"}' })).status, 204);   // no trailing newline
-    const lines = fs.readFileSync(path.join(ROOT, 'telemetry', session + '.jsonl'), 'utf8').trim().split('\n');
+    const lines = fs.readFileSync(path.join(telDir, session + '.jsonl'), 'utf8').trim().split('\n');
     assert.deepEqual(lines.map(l => JSON.parse(l).type), ['a', 'b']);
     assert.equal((await fetch(`${base}/api/telemetry?session=../x`, { method: 'POST', body: 'x' })).status, 400);
     assert.equal((await fetch(`${base}/api/telemetry`, { method: 'POST', body: 'x' })).status, 400);

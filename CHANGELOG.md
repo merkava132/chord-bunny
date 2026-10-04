@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.2.1 — 2026-10-03
+
+- **Keepers**: `tools/curate.mjs` + a curator thread in serve.py protect
+  the recordings that matter (calibration takes, N/Y-labelled windows,
+  rare-chord and practice matches) by hard-linking them into `keep/`, which
+  the prune skips, and mirroring the best 1 GB to the other disk together
+  with the telemetry. Runs after start and after every calibration, label
+  or match batch. The first calibration run's audio (2026-09-25) had already
+  been pruned.
+- Detection: the distinguishing-note check also needs a 2:1 ratio over the
+  rival's note (a decayed E major no longer fires Em).
+- Mic chip toggles off; idle auto-off after 15 min; recorder cap 20 GB.
+
 ## v1.2.0 — 2026-09-24 (the "make it awesome" night)
 
 Six parallel branches, each measured before merging.

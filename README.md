@@ -182,7 +182,17 @@ locally" toggle under *detection*:
   total (oldest WAVs pruned; the segment index and tool caches stay). The
   mic chip toggles the mic off, and it switches itself off after 15 minutes
   without a confident verdict at playing level (`CONFIG.idle`) — a tab left
-  open with the mic on records the room. Segment times are on the audio-stream clock (`ts`),
+  open with the mic on records the room.
+- **Keepers** → `keep/` next to the recordings: `tools/curate.mjs` scores
+  every segment from its telemetry — calibration takes and windows you
+  labelled with N/Y always, then rare-chord matches, then plain practice
+  matches, within a 4 GB budget — and hard-links them there (zero bytes;
+  the prune never touches a file with a second link, nor a session with a
+  `.keep` marker). The best 1 GB is also copied to `data/user/keep/` on
+  the other disk, with the telemetry and `data/user/*.json` (the labels).
+  serve.py runs it after start, a minute after a calibration or label
+  event, and while audio keeps arriving; `node tools/curate.mjs --dry-run`
+  shows what it would keep and why. Segment times are on the audio-stream clock (`ts`),
   the same clock as the frame events.
 
 Nothing is sent anywhere; `python -m http.server` would just drop the POSTs.
